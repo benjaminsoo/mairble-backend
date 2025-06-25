@@ -572,7 +572,7 @@ def analyze_pricing(req: AnalyzeRequest):
         has_real_market_data = night.market_avg_price is not None
         market_source = "real PriceLabs data" if has_real_market_data else "intelligent seasonal estimate"
         
-        prompt = f"""Act as a revenue manager for a luxury STR property in Newport, RI. Analyze this night's data and provide pricing recommendations:
+        prompt = f"""Act as a revenue manager for a luxury STR property in Newport, RI. Analyze this night's data and provide pricing recommendations in valid JSON:
 
 YOUR PROPERTY:
 - Date: {night.date} ({night.day_of_week})
@@ -588,7 +588,13 @@ PRICING STRATEGY:
 - High demand/events: Maintain or raise prices (10-30% premium)
 - Weekend premium: Add 10-15% for Friday/Saturday nights
 
-Return JSON with: suggested_price (number), confidence (0-100), explanation (max 2 sentences), insight_tag (short headline)"""
+REQUIRED JSON FORMAT:
+{{
+  "suggested_price": [number],
+  "confidence": [0-100 integer],
+  "explanation": "[1-2 sentences max]",
+  "insight_tag": "[short headline 3-5 words]"
+}}"""
 
         try:
             print(f"🔮 Calling OpenAI Responses API (reasoning model) for {night.date}...")
@@ -617,27 +623,64 @@ Return JSON with: suggested_price (number), confidence (0-100), explanation (max
             print(f"🤖 OpenAI response received (length: {len(content)})")
             print(f"🤖 Full response: {content}")
             
-            # Parse JSON from LLM output
+            # Parse JSON from LLM output with improved reasoning model support
             import json as pyjson
+            import re
+            
+            # Clean the content first - reasoning models sometimes add extra text
+            content_clean = content.strip()
+            
+            # Try multiple JSON extraction methods
+            parsed = None
+            
+            # Method 1: Direct JSON parsing
             try:
-                parsed = pyjson.loads(content)
-                print(f"✅ Successfully parsed JSON: {parsed}")
+                parsed = pyjson.loads(content_clean)
+                print(f"✅ Direct JSON parse successful: {parsed}")
             except Exception as e:
-                print(f"❌ JSON parse error: {e}")
-                print(f"❌ Raw content that failed to parse: {repr(content)}")
-                # fallback: try to extract JSON substring
-                import re
-                match = re.search(r'\{.*\}', content, re.DOTALL)
-                if match:
-                    try:
-                        parsed = pyjson.loads(match.group(0))
-                        print(f"✅ Extracted JSON from substring: {parsed}")
-                    except Exception as e2:
-                        print(f"❌ Even substring extraction failed: {e2}")
-                        parsed = {"suggested_price": None, "confidence": None, "explanation": content, "insight_tag": "Parse Error"}
-                else:
-                    print(f"❌ No JSON found in content")
-                    parsed = {"suggested_price": None, "confidence": None, "explanation": content, "insight_tag": "No JSON Found"}
+                print(f"⚠️ Direct JSON parse failed: {e}")
+                
+                # Method 2: Extract JSON from anywhere in the response
+                json_patterns = [
+                    r'\{[^{}]*"suggested_price"[^{}]*\}',  # Look for JSON with our key
+                    r'\{.*?"suggested_price".*?\}',        # More flexible
+                    r'\{.*\}',                             # Any JSON object
+                ]
+                
+                for pattern in json_patterns:
+                    matches = re.findall(pattern, content_clean, re.DOTALL)
+                    for match in matches:
+                        try:
+                            parsed = pyjson.loads(match)
+                            print(f"✅ Extracted JSON with pattern '{pattern}': {parsed}")
+                            break
+                        except:
+                            continue
+                    if parsed:
+                        break
+                
+                # Method 3: Extract values using regex if JSON parsing completely fails
+                if not parsed:
+                    print(f"⚠️ All JSON extraction failed, trying regex extraction...")
+                    print(f"Full content: {repr(content_clean)}")
+                    
+                    # Try to extract individual values
+                    price_match = re.search(r'suggested_price["\s:]*(\d+(?:\.\d+)?)', content_clean)
+                    confidence_match = re.search(r'confidence["\s:]*(\d+)', content_clean)
+                    explanation_match = re.search(r'explanation["\s:]*["\']([^"\']+)["\']', content_clean)
+                    tag_match = re.search(r'insight_tag["\s:]*["\']([^"\']+)["\']', content_clean)
+                    
+                    parsed = {
+                        "suggested_price": float(price_match.group(1)) if price_match else None,
+                        "confidence": int(confidence_match.group(1)) if confidence_match else None,
+                        "explanation": explanation_match.group(1) if explanation_match else content_clean[:100],
+                        "insight_tag": tag_match.group(1) if tag_match else "Parsing Issue"
+                    }
+                    print(f"✅ Regex extraction result: {parsed}")
+                    
+            # Final fallback if everything fails
+            if not parsed:
+                parsed = {"suggested_price": None, "confidence": None, "explanation": content_clean, "insight_tag": "Parse Failed"}
             
             # Safe parsing functions for LLM output
             def safe_float(val):
