@@ -544,16 +544,22 @@ class AnalyzeRequest(BaseModel):
 @app.post("/analyze-pricing", response_model=List[LLMResult])
 def analyze_pricing(req: AnalyzeRequest):
     print("📥 Received analyze request")
+    print(f"📊 Request details: {len(req.nights)} nights, model: {req.model}")
     
     if not settings.OPENAI_API_KEY:
+        print("❌ OpenAI API key not configured!")
         raise HTTPException(status_code=500, detail="OpenAI API key not configured.")
     
+    print(f"✅ OpenAI API key available (length: {len(settings.OPENAI_API_KEY)})")
     client = OpenAI(api_key=settings.OPENAI_API_KEY)
     results = []
     
     # Only process the first 5 nights for testing
     nights_to_process = req.nights[:5]
     print(f"🧠 Processing {len(nights_to_process)} nights with AI analysis...")
+    
+    for i, night in enumerate(nights_to_process):
+        print(f"📅 Night {i+1}/5: {night.date} - ${night.your_price} vs ${night.market_avg_price} market")
     
     for night in nights_to_process:
         print(f"🔄 Analyzing night: {night.date}")
@@ -585,6 +591,7 @@ PRICING STRATEGY:
 Return JSON with: suggested_price (number), confidence (0-100), explanation (max 2 sentences), insight_tag (short headline)"""
 
         try:
+            print(f"🔮 Calling OpenAI API for {night.date}...")
             response = client.chat.completions.create(
                 model=req.model,
                 messages=[{"role": "user", "content": prompt}],
@@ -592,23 +599,30 @@ Return JSON with: suggested_price (number), confidence (0-100), explanation (max
                 max_tokens=256
             )
             content = response.choices[0].message.content
-            print(f"🤖 LLM response: {content}")
+            print(f"🤖 OpenAI response received (length: {len(content)})")
+            print(f"🤖 Full response: {content}")
             
             # Parse JSON from LLM output
             import json as pyjson
             try:
                 parsed = pyjson.loads(content)
-                print(f"✅ Parsed JSON: {parsed}")
+                print(f"✅ Successfully parsed JSON: {parsed}")
             except Exception as e:
                 print(f"❌ JSON parse error: {e}")
+                print(f"❌ Raw content that failed to parse: {repr(content)}")
                 # fallback: try to extract JSON substring
                 import re
                 match = re.search(r'\{.*\}', content, re.DOTALL)
                 if match:
-                    parsed = pyjson.loads(match.group(0))
-                    print(f"✅ Extracted JSON: {parsed}")
+                    try:
+                        parsed = pyjson.loads(match.group(0))
+                        print(f"✅ Extracted JSON from substring: {parsed}")
+                    except Exception as e2:
+                        print(f"❌ Even substring extraction failed: {e2}")
+                        parsed = {"suggested_price": None, "confidence": None, "explanation": content, "insight_tag": "Parse Error"}
                 else:
-                    parsed = {"suggested_price": None, "confidence": None, "explanation": content, "insight_tag": None}
+                    print(f"❌ No JSON found in content")
+                    parsed = {"suggested_price": None, "confidence": None, "explanation": content, "insight_tag": "No JSON Found"}
             
             # Safe parsing functions for LLM output
             def safe_float(val):
@@ -649,11 +663,17 @@ Return JSON with: suggested_price (number), confidence (0-100), explanation (max
                 ))
                 
         except Exception as e:
-            print(f"❌ Error processing night with OpenAI: {e}")
+            print(f"❌ ERROR: OpenAI API call failed for {night.date}: {e}")
+            print(f"❌ Exception type: {type(e).__name__}")
+            import traceback
+            print(f"❌ Full traceback: {traceback.format_exc()}")
+            
             # Provide intelligent fallback analysis based on market data
+            print(f"🔄 Using fallback analysis for {night.date}")
             if night.market_avg_price and night.your_price:
                 price_gap = night.your_price - night.market_avg_price
                 price_gap_pct = (price_gap / night.market_avg_price) * 100
+                print(f"📊 Price gap: ${price_gap:.2f} ({price_gap_pct:.1f}%)")
                 
                 # Simple rule-based analysis as fallback
                 if price_gap_pct > 50:  # Significantly overpriced
@@ -661,21 +681,25 @@ Return JSON with: suggested_price (number), confidence (0-100), explanation (max
                     explanation = f"Your price is {price_gap_pct:.0f}% above market. Suggest lowering to ${suggested:.0f} for better booking chances."
                     confidence = 85
                     tag = "Overpriced vs Market"
+                    print(f"🔻 Fallback: Overpriced scenario")
                 elif price_gap_pct < -10:  # Underpriced
                     suggested = night.market_avg_price * 1.1   # 10% premium
                     explanation = f"You're underpricing by {abs(price_gap_pct):.0f}%. Consider raising to ${suggested:.0f} to capture more revenue."
                     confidence = 80
                     tag = "Revenue Opportunity"
+                    print(f"🔺 Fallback: Underpriced scenario")
                 else:  # Well priced
                     suggested = night.your_price
                     explanation = f"Your pricing is competitive vs market average of ${night.market_avg_price:.0f}. Hold steady."
                     confidence = 75
                     tag = "Market Aligned"
+                    print(f"➡️ Fallback: Market aligned scenario (THIS IS THE ISSUE!)")
             else:
                 suggested = night.your_price
                 explanation = "OpenAI analysis unavailable. Consider market conditions and demand when pricing."
                 confidence = 50
                 tag = "Fallback Analysis"
+                print(f"❓ Fallback: No market data available")
             
             results.append(LLMResult(
                 date=night.date,
