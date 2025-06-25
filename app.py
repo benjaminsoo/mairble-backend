@@ -604,12 +604,14 @@ REQUIRED JSON FORMAT:
                 # Use Responses API for reasoning models
                 response = client.responses.create(
                     model=req.model,
-                    reasoning={"effort": "medium"},  # low, medium, or high
+                    reasoning={"effort": "low"},  # Use "low" to save tokens for output
                     input=[{"role": "user", "content": prompt}],
-                    max_output_tokens=500  # Reasoning models need more tokens
+                    max_output_tokens=2000  # Much higher limit for reasoning models
                 )
                 content = response.output_text
                 print(f"🧠 Reasoning tokens used: {response.usage.output_tokens_details.reasoning_tokens}")
+                print(f"🧠 Total output tokens: {response.usage.output_tokens}")
+                print(f"🧠 Context window usage: {response.usage.total_tokens} tokens")
             else:
                 # Use Chat Completions API for regular models
                 response = client.chat.completions.create(
