@@ -591,14 +591,29 @@ PRICING STRATEGY:
 Return JSON with: suggested_price (number), confidence (0-100), explanation (max 2 sentences), insight_tag (short headline)"""
 
         try:
-            print(f"🔮 Calling OpenAI API for {night.date}...")
-            response = client.chat.completions.create(
-                model=req.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                max_tokens=256
-            )
-            content = response.choices[0].message.content
+            print(f"🔮 Calling OpenAI Responses API (reasoning model) for {night.date}...")
+            
+            # Check if we're using a reasoning model (o3, o4-mini, etc.)
+            if req.model.startswith(('o1', 'o3', 'o4')):
+                # Use Responses API for reasoning models
+                response = client.responses.create(
+                    model=req.model,
+                    reasoning={"effort": "medium"},  # low, medium, or high
+                    input=[{"role": "user", "content": prompt}],
+                    max_output_tokens=500  # Reasoning models need more tokens
+                )
+                content = response.output_text
+                print(f"🧠 Reasoning tokens used: {response.usage.output_tokens_details.reasoning_tokens}")
+            else:
+                # Use Chat Completions API for regular models
+                response = client.chat.completions.create(
+                    model=req.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.7,
+                    max_tokens=256
+                )
+                content = response.choices[0].message.content
+            
             print(f"🤖 OpenAI response received (length: {len(content)})")
             print(f"🤖 Full response: {content}")
             
