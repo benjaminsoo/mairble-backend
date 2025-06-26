@@ -541,6 +541,14 @@ class AnalyzeRequest(BaseModel):
     nights: List[NightData]
     model: Optional[str] = "gpt-4"
 
+class ChatRequest(BaseModel):
+    message: str
+    conversation_id: Optional[str] = None
+
+class ChatResponse(BaseModel):
+    response: str
+    conversation_id: str
+
 @app.post("/analyze-pricing", response_model=List[LLMResult])
 def analyze_pricing(req: AnalyzeRequest):
     print("📥 Received analyze request")
@@ -771,6 +779,51 @@ REQUIRED JSON FORMAT:
     
     print(f"✅ Analysis complete. Returning {len(results)} results.")
     return results 
+
+@app.post("/chat", response_model=ChatResponse)
+def chat_with_ai(req: ChatRequest):
+    """Chat with AI assistant - simple implementation without context for now"""
+    print(f"💬 Received chat request: {req.message[:50]}...")
+    
+    if not settings.OPENAI_API_KEY:
+        print("❌ OpenAI API key not configured!")
+        raise HTTPException(status_code=500, detail="OpenAI API key not configured.")
+    
+    try:
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        
+        # Simple system prompt for now - we'll add property context later
+        system_prompt = """You are a helpful AI assistant for short-term rental property management. 
+You provide friendly, professional advice about property management, pricing, marketing, and guest experience.
+Keep responses conversational and helpful."""
+        
+        print(f"🤖 Calling OpenAI Chat API...")
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": req.message}
+            ],
+            temperature=0.7,
+            max_tokens=500
+        )
+        
+        ai_response = response.choices[0].message.content
+        print(f"✅ AI response received (length: {len(ai_response)})")
+        
+        # Generate or use provided conversation ID
+        conversation_id = req.conversation_id or f"chat_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        return ChatResponse(
+            response=ai_response,
+            conversation_id=conversation_id
+        )
+        
+    except Exception as e:
+        print(f"❌ Error in chat endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Chat service error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
