@@ -56,6 +56,12 @@ class NightData(BaseModel):
     event: Optional[str]
     day_of_week: Optional[str]
     lead_time: Optional[int]
+    # New valuable fields from PriceLabs
+    adr_last_year: Optional[float]  # ADR_STLY - historical benchmark
+    neighborhood_demand: Optional[str]  # nhood_demand - granular demand level
+    min_price_limit: Optional[float]  # minimum_price - pricing floor
+    avg_los_last_year: Optional[float]  # avg_los_STLY - historical stay length
+    seasonal_profile: Optional[str]  # minstay_seasonal_profile - seasonal context
 
 class LLMResult(BaseModel):
     date: str
@@ -470,6 +476,34 @@ def fetch_pricing_data(req: FetchRequest):
                 except:
                     pass
             
+            # Extract valuable PriceLabs fields for AI context
+            adr_last_year = None
+            neighborhood_demand = None
+            min_price_limit = None
+            avg_los_last_year = None
+            seasonal_profile = None
+            
+            if "reason" in night and "listing_info" in night["reason"]:
+                listing_info = night["reason"]["listing_info"]
+                
+                # Extract and convert PriceLabs fields
+                try:
+                    if listing_info.get("ADR_STLY", -1) != -1:
+                        adr_last_year = float(listing_info["ADR_STLY"])
+                    
+                    neighborhood_demand = listing_info.get("nhood_demand")
+                    
+                    if listing_info.get("minimum_price"):
+                        min_price_limit = float(listing_info["minimum_price"])
+                    
+                    if listing_info.get("avg_los_STLY", 0) > 0:
+                        avg_los_last_year = float(listing_info["avg_los_STLY"])
+                    
+                    seasonal_profile = listing_info.get("minstay_seasonal_profile")
+                    
+                except (ValueError, TypeError) as e:
+                    print(f"   ⚠️ Error parsing PriceLabs fields: {e}")
+
             nights.append(NightData(
                 date=date,
                 your_price=your_price,
@@ -477,7 +511,12 @@ def fetch_pricing_data(req: FetchRequest):
                 occupancy=occupancy,
                 event=event,
                 day_of_week=day_of_week,
-                lead_time=lead_time
+                lead_time=lead_time,
+                adr_last_year=adr_last_year,
+                neighborhood_demand=neighborhood_demand,
+                min_price_limit=min_price_limit,
+                avg_los_last_year=avg_los_last_year,
+                seasonal_profile=seasonal_profile
             ))
         
         # Filter to available nights with valid pricing
@@ -494,7 +533,9 @@ def fetch_pricing_data(req: FetchRequest):
         result_nights = available_nights[:5]
         
         for night in result_nights:
-            print(f"📅 {night.date}: Your ${night.your_price} | Market ${night.market_avg_price} | {night.event}")
+            historical_info = f" | LY: ${night.adr_last_year}" if night.adr_last_year else ""
+            demand_info = f" | Demand: {night.neighborhood_demand}" if night.neighborhood_demand else ""
+            print(f"📅 {night.date}: Your ${night.your_price} | Market ${night.market_avg_price} | {night.event}{historical_info}{demand_info}")
         
         return result_nights
         
@@ -516,7 +557,12 @@ def get_mock_data():
             occupancy=28.5,
             event="Low Demand",
             day_of_week="Sunday",
-            lead_time=None
+            lead_time=None,
+            adr_last_year=650.0,
+            neighborhood_demand="2",
+            min_price_limit=399.0,
+            avg_los_last_year=3.0,
+            seasonal_profile="SummerPeak"
         ),
         NightData(
             date="2025-06-23",
@@ -525,7 +571,12 @@ def get_mock_data():
             occupancy=25.2,
             event="Low Demand",
             day_of_week="Monday",
-            lead_time=None
+            lead_time=None,
+            adr_last_year=580.0,
+            neighborhood_demand="1",
+            min_price_limit=399.0,
+            avg_los_last_year=4.0,
+            seasonal_profile="SummerPeak"
         ),
         NightData(
             date="2025-06-24",
@@ -534,7 +585,12 @@ def get_mock_data():
             occupancy=22.8,
             event="Low Demand",
             day_of_week="Tuesday",
-            lead_time=None
+            lead_time=None,
+            adr_last_year=590.0,
+            neighborhood_demand="1",
+            min_price_limit=399.0,
+            avg_los_last_year=4.0,
+            seasonal_profile="SummerPeak"
         ),
         NightData(
             date="2025-06-25",
@@ -543,7 +599,12 @@ def get_mock_data():
             occupancy=31.5,
             event="Low Demand",
             day_of_week="Wednesday",
-            lead_time=None
+            lead_time=None,
+            adr_last_year=610.0,
+            neighborhood_demand="2",
+            min_price_limit=399.0,
+            avg_los_last_year=3.0,
+            seasonal_profile="SummerPeak"
         ),
         NightData(
             date="2025-06-29",
@@ -552,7 +613,12 @@ def get_mock_data():
             occupancy=35.2,
             event="Normal Demand",
             day_of_week="Sunday",
-            lead_time=None
+            lead_time=None,
+            adr_last_year=720.0,
+            neighborhood_demand="3",
+            min_price_limit=399.0,
+            avg_los_last_year=2.0,
+            seasonal_profile="SummerPeak"
         )
     ]
 
@@ -586,7 +652,9 @@ def analyze_pricing(req: AnalyzeRequest):
     print(f"🧠 Processing {len(nights_to_process)} nights with AI analysis...")
     
     for i, night in enumerate(nights_to_process):
-        print(f"📅 Night {i+1}/5: {night.date} - ${night.your_price} vs ${night.market_avg_price} market")
+        historical_context = f" (LY: ${night.adr_last_year})" if night.adr_last_year else ""
+        demand_level = f" D{night.neighborhood_demand}" if night.neighborhood_demand else ""
+        print(f"📅 Night {i+1}/5: {night.date} - ${night.your_price} vs ${night.market_avg_price} market{historical_context}{demand_level}")
     
     for night in nights_to_process:
         print(f"🔄 Analyzing night: {night.date}")
@@ -599,18 +667,42 @@ def analyze_pricing(req: AnalyzeRequest):
         has_real_market_data = night.market_avg_price is not None
         market_source = "real PriceLabs data" if has_real_market_data else "intelligent seasonal estimate"
         
+        # Build enhanced context with new PriceLabs data
+        historical_context = ""
+        if night.adr_last_year:
+            yoy_change = ((night.your_price - night.adr_last_year) / night.adr_last_year) * 100
+            historical_context = f"Last year: ${night.adr_last_year:.0f} (YoY change: {yoy_change:+.0f}%)"
+        
+        demand_context = f"Demand Level: {night.neighborhood_demand or 'Unknown'}"
+        
+        constraints_context = ""
+        if night.min_price_limit:
+            constraints_context = f"Minimum Price: ${night.min_price_limit:.0f}"
+        
+        stay_context = ""
+        if night.avg_los_last_year:
+            stay_context = f"Typical Stay: {night.avg_los_last_year:.0f} nights"
+
         prompt = f"""Act as a revenue manager for a luxury STR property in Newport, RI. Analyze this night's data and provide pricing recommendations in valid JSON:
 
 YOUR PROPERTY:
 - Date: {night.date} ({night.day_of_week})
 - Current Price: ${night.your_price}
 - Market Average: {market_context} ({market_source})
-- Local Demand: {night.event or 'Standard'}
+- {historical_context}
+- {demand_context}
+- Local Event: {night.event or 'Standard'}
 - Area Occupancy: {night.occupancy}%
+- {stay_context}
+- {constraints_context}
+- Season: {night.seasonal_profile or 'Standard'}
 
-PRICING STRATEGY:
+ENHANCED PRICING STRATEGY:
+- Historical Performance: Factor in last year's proven rate vs current pricing
+- Demand Signals: Use neighborhood demand level (1=low, 5=high) for pricing
+- Price Constraints: Respect minimum price limit
+- Stay Patterns: Consider typical length of stay for rate optimization
 - Real market data: Price competitively vs actual market (10-20% premium for luxury)
-- Estimated data: Be more conservative, focus on occupancy optimization
 - Low demand: Aggressively undercut to capture bookings (15-25% reduction)
 - High demand/events: Maintain or raise prices (10-30% premium)
 - Weekend premium: Add 10-15% for Friday/Saturday nights
@@ -622,6 +714,12 @@ REQUIRED JSON FORMAT:
   "explanation": "[1-2 sentences max]",
   "insight_tag": "[short headline 3-5 words]"
 }}"""
+
+        # LOG: Complete prompt sent to LLM
+        print(f"📝 COMPLETE PROMPT SENT TO LLM:")
+        print("="*60)
+        print(prompt)
+        print("="*60)
 
         try:
             print(f"🔮 Calling OpenAI Responses API (reasoning model) for {night.date}...")
