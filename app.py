@@ -45,6 +45,9 @@ def health_check():
     }
 
 class FetchRequest(BaseModel):
+    api_key: str  # PriceLabs API key from frontend
+    listing_id: Optional[str] = None  # Listing ID from frontend
+    pms: Optional[str] = None  # PMS from frontend
     date_from: Optional[str] = None  # yyyy-mm-dd
     date_to: Optional[str] = None
 
@@ -276,21 +279,26 @@ def get_intelligent_market_fallback(your_price, date, location="Newport, RI"):
 def fetch_pricing_data(req: FetchRequest):
     try:
         BASE_URL = "https://api.pricelabs.co"
-        HEADERS = {"X-API-Key": settings.PRICELABS_API_KEY}
+        HEADERS = {"X-API-Key": req.api_key}
         today = datetime.date.today()
         date_from = req.date_from or today.isoformat()
         date_to = req.date_to or (today + datetime.timedelta(days=90)).isoformat()
+        
+        # Use provided values or fallback to defaults
+        listing_id = req.listing_id or settings.LISTING_ID
+        pms = req.pms or settings.PMS
 
-        print(f"🔍 Fetching pricing data for listing {settings.LISTING_ID} from {date_from} to {date_to}")
-        print(f"🔑 Using API key: {settings.PRICELABS_API_KEY[:10]}...")
+        print(f"🔍 Fetching pricing data for listing {listing_id} from {date_from} to {date_to}")
+        print(f"🔑 Using API key: {req.api_key[:10]}...")
+        print(f"🏠 PMS: {pms}")
 
         # Fetch prices
         prices_url = f"{BASE_URL}/v1/listing_prices"
         body = {
             "listings": [
                 {
-                    "id": settings.LISTING_ID,
-                    "pms": settings.PMS,
+                    "id": listing_id,
+                    "pms": pms,
                     "dateFrom": date_from,
                     "dateTo": date_to,
                     "reason": True
@@ -333,7 +341,7 @@ def fetch_pricing_data(req: FetchRequest):
 
         # Fetch neighborhood data for market averages
         nb_url = f"{BASE_URL}/v1/neighborhood_data"
-        nb_params = {"listing_id": settings.LISTING_ID, "pms": settings.PMS}
+        nb_params = {"listing_id": listing_id, "pms": pms}
         
         print(f"📡 Calling PriceLabs neighborhood_data API...")
         print(f"URL: {nb_url}")
