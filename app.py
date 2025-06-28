@@ -318,9 +318,16 @@ def fetch_pricing_data(req: FetchRequest):
         
         if resp.status_code != 200:
             print(f"❌ Listing prices API failed: {resp.status_code} - {resp.text}")
-            # For demo purposes, if the real API fails, return mock data
-            print("🔄 Falling back to mock data for demo...")
-            return get_mock_data()
+            
+            # Return proper error messages based on status code
+            if resp.status_code == 401:
+                raise HTTPException(status_code=401, detail="Invalid PriceLabs API key. Please check your API key and try again.")
+            elif resp.status_code == 403:
+                raise HTTPException(status_code=403, detail="PriceLabs API access denied. Please verify your API key permissions.")
+            elif resp.status_code == 404:
+                raise HTTPException(status_code=404, detail="Listing not found. Please check your listing ID and try again.")
+            else:
+                raise HTTPException(status_code=resp.status_code, detail=f"PriceLabs API error: {resp.text}")
             
         try:
             response_data = resp.json()
@@ -330,12 +337,12 @@ def fetch_pricing_data(req: FetchRequest):
                 data = response_data[0].get("data", [])
             else:
                 print(f"❌ Unexpected response structure: {response_data}")
-                return get_mock_data()
+                raise HTTPException(status_code=500, detail="Unexpected response format from PriceLabs API")
                 
         except Exception as e:
             print(f"❌ Error parsing JSON response: {e}")
             print(f"Raw response: {resp.text}")
-            return get_mock_data()
+            raise HTTPException(status_code=500, detail="Failed to parse PriceLabs API response")
         
         print(f"✅ Retrieved {len(data)} nights of pricing data")
 
@@ -532,10 +539,10 @@ def fetch_pricing_data(req: FetchRequest):
         
         print(f"✅ Filtered to {len(available_nights)} available nights with valid pricing")
         
-        # If no nights after filtering, return mock data for demo
+        # If no nights after filtering, return error
         if len(available_nights) == 0:
-            print("⚠️ No available nights after filtering, returning mock data...")
-            return get_mock_data()
+            print("⚠️ No available nights found after filtering")
+            raise HTTPException(status_code=404, detail="No available nights found for the specified listing. Check your listing ID or try a different date range.")
         
         # Return first 5 nights for testing
         result_nights = available_nights[:5]
@@ -547,88 +554,16 @@ def fetch_pricing_data(req: FetchRequest):
         
         return result_nights
         
+    except HTTPException:
+        # Re-raise HTTP exceptions (our proper error responses)
+        raise
     except Exception as e:
         print(f"❌ CRITICAL ERROR in fetch_pricing_data: {e}")
         import traceback
         traceback.print_exc()
-        # Return mock data for demo purposes
-        print("🔄 Returning mock data due to error...")
-        return get_mock_data()
+        raise HTTPException(status_code=500, detail="Internal server error occurred while fetching pricing data")
 
-def get_mock_data():
-    """Return mock data for demo purposes when API fails"""
-    return [
-        NightData(
-            date="2025-06-22",
-            your_price=848.0,
-            market_avg_price=533.0,
-            occupancy=28.5,
-            event="Low Demand",
-            day_of_week="Sunday",
-            lead_time=None,
-            adr_last_year=650.0,
-            neighborhood_demand="2",
-            min_price_limit=399.0,
-            avg_los_last_year=3.0,
-            seasonal_profile="SummerPeak"
-        ),
-        NightData(
-            date="2025-06-23",
-            your_price=757.0,
-            market_avg_price=500.0,
-            occupancy=25.2,
-            event="Low Demand",
-            day_of_week="Monday",
-            lead_time=None,
-            adr_last_year=580.0,
-            neighborhood_demand="1",
-            min_price_limit=399.0,
-            avg_los_last_year=4.0,
-            seasonal_profile="SummerPeak"
-        ),
-        NightData(
-            date="2025-06-24",
-            your_price=771.0,
-            market_avg_price=500.0,
-            occupancy=22.8,
-            event="Low Demand",
-            day_of_week="Tuesday",
-            lead_time=None,
-            adr_last_year=590.0,
-            neighborhood_demand="1",
-            min_price_limit=399.0,
-            avg_los_last_year=4.0,
-            seasonal_profile="SummerPeak"
-        ),
-        NightData(
-            date="2025-06-25",
-            your_price=792.0,
-            market_avg_price=505.0,
-            occupancy=31.5,
-            event="Low Demand",
-            day_of_week="Wednesday",
-            lead_time=None,
-            adr_last_year=610.0,
-            neighborhood_demand="2",
-            min_price_limit=399.0,
-            avg_los_last_year=3.0,
-            seasonal_profile="SummerPeak"
-        ),
-        NightData(
-            date="2025-06-29",
-            your_price=880.0,
-            market_avg_price=550.5,
-            occupancy=35.2,
-            event="Normal Demand",
-            day_of_week="Sunday",
-            lead_time=None,
-            adr_last_year=720.0,
-            neighborhood_demand="3",
-            min_price_limit=399.0,
-            avg_los_last_year=2.0,
-            seasonal_profile="SummerPeak"
-        )
-    ]
+
 
 class AnalyzeRequest(BaseModel):
     nights: List[NightData]
