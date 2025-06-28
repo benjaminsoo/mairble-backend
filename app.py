@@ -961,7 +961,7 @@ def update_single_price(req: SingleOverrideRequest):
             "overrides": [
                 {
                     "date": req.date,
-                    "price": str(req.price),  # PriceLabs expects string
+                    "price": str(int(req.price)) if float(req.price).is_integer() else str(req.price),  # Clean price format
                     "price_type": req.price_type,
                     "currency": req.currency,
                     "reason": req.reason
@@ -996,9 +996,10 @@ def update_single_price(req: SingleOverrideRequest):
         result = response.json()
         
         # Check if our date was successfully updated
+        # PriceLabs returns: {"overrides": [...], "child_listings_update_info": {}}
         updated_dates = []
-        if "data" in result and isinstance(result["data"], list):
-            updated_dates = [item.get("date") for item in result["data"] if item.get("date")]
+        if "overrides" in result and isinstance(result["overrides"], list):
+            updated_dates = [item.get("date") for item in result["overrides"] if item.get("date")]
         
         if req.date in updated_dates:
             return SingleOverrideResponse(
