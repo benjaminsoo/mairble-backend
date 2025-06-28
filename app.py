@@ -572,6 +572,7 @@ class AnalyzeRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
+    property_context: Optional[dict] = None  # Guest profile, competitive advantage, booking patterns
 
 class ChatResponse(BaseModel):
     response: str
@@ -842,7 +843,7 @@ REQUIRED JSON FORMAT:
 
 @app.post("/chat", response_model=ChatResponse)
 def chat_with_ai(req: ChatRequest):
-    """Chat with AI assistant - simple implementation without context for now"""
+    """Chat with AI assistant with personalized property context"""
     print(f"💬 Received chat request: {req.message[:50]}...")
     
     if not settings.OPENAI_API_KEY:
@@ -852,12 +853,37 @@ def chat_with_ai(req: ChatRequest):
     try:
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
         
-        # Simple system prompt for now - we'll add property context later
-        system_prompt = """You are a helpful AI assistant for short-term rental property management. 
-You provide friendly, professional advice about property management, pricing, marketing, and guest experience.
-Keep responses conversational and helpful."""
+        # Build enhanced system prompt with property context
+        base_prompt = """You are an expert AI assistant for short-term rental property management, specializing in luxury properties. 
+You provide intelligent, actionable advice about pricing, marketing, guest experience, and revenue optimization.
+Keep responses conversational but professional, and always consider the specific property context provided."""
         
-        print(f"🤖 Calling OpenAI Chat API...")
+        context_prompt = ""
+        if req.property_context:
+            print("📝 Including property context in system prompt...")
+            guest_profile = req.property_context.get('guestProfile', '')
+            competitive_advantage = req.property_context.get('competitiveAdvantage', '')
+            booking_patterns = req.property_context.get('bookingPatterns', '')
+            
+            if guest_profile or competitive_advantage or booking_patterns:
+                context_prompt = f"""
+
+PROPERTY CONTEXT - Use this to personalize all advice:
+
+GUEST PROFILE & VALUE PROPOSITION:
+{guest_profile}
+
+COMPETITIVE LANDSCAPE & ADVANTAGES:
+{competitive_advantage}
+
+BOOKING PATTERNS & SEASONALITY:
+{booking_patterns}
+
+Always reference this context when providing pricing, marketing, or operational advice. Tailor recommendations specifically to this property's guest type, competitive position, and seasonal patterns."""
+        
+        system_prompt = base_prompt + context_prompt
+        
+        print(f"🤖 Calling OpenAI Chat API with {'enhanced' if context_prompt else 'basic'} context...")
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
