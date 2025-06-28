@@ -911,6 +911,118 @@ Always reference this context when providing pricing, marketing, or operational 
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Chat service error: {str(e)}")
 
+class SingleOverrideRequest(BaseModel):
+    api_key: str
+    listing_id: str
+    pms: str
+    date: str
+    price: float
+    price_type: str = "fixed"  # Default to fixed
+    currency: str = "USD"
+    reason: str = "Manual update via mAIrble"
+    update_children: bool = False
+
+class SingleOverrideResponse(BaseModel):
+    success: bool
+    message: str
+    updated_date: Optional[str] = None
+    error_details: Optional[str] = None
+
+@app.post("/update-single-price", response_model=SingleOverrideResponse)
+def update_single_price(req: SingleOverrideRequest):
+    """Update pricing for a single date with explicit user control"""
+    try:
+        print(f"🔄 Updating price for {req.date} to ${req.price} ({req.price_type})")
+        
+        BASE_URL = "https://api.pricelabs.co"
+        HEADERS = {"X-API-Key": req.api_key}
+        
+        # Validate price_type
+        if req.price_type not in ["fixed", "percent"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid price_type. Must be 'fixed' or 'percent'"
+            )
+        
+        # Validate percentage range if percent type
+        if req.price_type == "percent" and (req.price < -75 or req.price > 500):
+            raise HTTPException(
+                status_code=400,
+                detail="Percentage must be between -75 and 500"
+            )
+        
+        # PriceLabs overrides endpoint
+        url = f"{BASE_URL}/v1/listings/{req.listing_id}/overrides"
+        
+        # Prepare payload exactly as per PriceLabs API spec
+        payload = {
+            "pms": req.pms,
+            "update_children": req.update_children,
+            "overrides": [
+                {
+                    "date": req.date,
+                    "price": str(req.price),  # PriceLabs expects string
+                    "price_type": req.price_type,
+                    "currency": req.currency,
+                    "reason": req.reason
+                }
+            ]
+        }
+        
+        print(f"📤 Sending to PriceLabs: {payload}")
+        
+        response = requests.post(url, headers=HEADERS, json=payload)
+        
+        print(f"📥 PriceLabs response: {response.status_code}")
+        print(f"Response body: {response.text}")
+        
+        if response.status_code != 200:
+            error_message = "Unknown error"
+            try:
+                error_data = response.json()
+                error_message = error_data.get('message', error_data.get('detail', str(error_data)))
+            except:
+                error_message = response.text or f"HTTP {response.status_code}"
+            
+            print(f"❌ PriceLabs API error: {error_message}")
+            
+            return SingleOverrideResponse(
+                success=False,
+                message=f"Failed to update price: {error_message}",
+                error_details=error_message
+            )
+        
+        # Parse successful response
+        result = response.json()
+        
+        # Check if our date was successfully updated
+        updated_dates = []
+        if "data" in result and isinstance(result["data"], list):
+            updated_dates = [item.get("date") for item in result["data"] if item.get("date")]
+        
+        if req.date in updated_dates:
+            return SingleOverrideResponse(
+                success=True,
+                message=f"Successfully updated price for {req.date} to ${req.price}",
+                updated_date=req.date
+            )
+        else:
+            return SingleOverrideResponse(
+                success=False,
+                message=f"Price update may have failed - {req.date} not found in response",
+                error_details=str(result)
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        return SingleOverrideResponse(
+            success=False,
+            message=f"Internal error: {str(e)}",
+            error_details=str(e)
+        )
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True) 
