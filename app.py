@@ -425,18 +425,40 @@ def fetch_pricing_data(req: FetchRequest):
                 print(f"   Full listing_info: {listing_info}")
                 print(f"   Available keys: {list(listing_info.keys())}")
                 
-                # Check all potential lead time fields
-                avg_los = listing_info.get("avg_los")
-                print(f"   avg_los: {avg_los} (type: {type(avg_los)})")
+                # Calculate lead time from booking date data
+                lead_time = None
                 
-                # Look for other potential lead time fields
+                # Method 1: Use historical lead time from last year's data
+                booked_date_stly = listing_info.get("booked_date_STLY")
+                date_stly = listing_info.get("date_STLY")
+                
+                if booked_date_stly and date_stly and booked_date_stly != '-1':
+                    try:
+                        booked_dt = datetime.datetime.strptime(booked_date_stly, "%Y-%m-%d")
+                        stay_dt = datetime.datetime.strptime(date_stly, "%Y-%m-%d")
+                        historical_lead_time = (stay_dt - booked_dt).days
+                        if historical_lead_time > 0:
+                            lead_time = historical_lead_time
+                            print(f"   ✅ Historical lead time: {historical_lead_time} days (booked {booked_date_stly} for {date_stly})")
+                    except Exception as e:
+                        print(f"   ❌ Error calculating historical lead time: {e}")
+                
+                # Method 2: Look for any explicit lead time fields (in case PriceLabs adds them)
                 for key, value in listing_info.items():
-                    if "lead" in key.lower() or "advance" in key.lower() or "booking" in key.lower():
-                        print(f"   Potential lead time field '{key}': {value}")
+                    if "lead" in key.lower() and isinstance(value, (int, float)) and value > 0:
+                        lead_time = value
+                        print(f"   ✅ Found explicit lead time field '{key}': {value}")
+                        break
                 
-                # Use avg_los for now but log what we're getting
-                lead_time = avg_los
-                print(f"   Final lead_time value: {lead_time}")
+                # Log what we're using
+                if lead_time:
+                    print(f"   ✅ Final lead_time value: {lead_time} days")
+                else:
+                    print(f"   ⚠️ No lead time data available")
+                    
+                # Also log avg_los separately for context (but don't use as lead_time)
+                avg_los = listing_info.get("avg_los", 0)
+                print(f"   📊 Average Length of Stay: {avg_los} nights (separate from lead time)")
                 print("="*50)
             
             # Calculate day of week
