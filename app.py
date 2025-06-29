@@ -1,15 +1,22 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 import requests
 import datetime
 import os
+import uuid
 from openai import OpenAI
 from config import get_settings
 
 # Get application settings
 settings = get_settings()
+
+# In-memory storage for conversations (production would use database)
+conversations_store: Dict[str, Dict] = {}
+
+# Maximum messages to keep in conversation history (to manage token limits)
+MAX_CONVERSATION_HISTORY = 20
 
 # Create FastAPI app with production-ready configuration
 app = FastAPI(
@@ -72,6 +79,88 @@ class LLMResult(BaseModel):
     confidence: Optional[int]
     explanation: Optional[str]
     insight_tag: Optional[str]
+
+class ChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+    timestamp: datetime.datetime
+
+class ConversationInfo(BaseModel):
+    conversation_id: str
+    created_at: datetime.datetime
+    last_message_at: datetime.datetime
+    message_count: int
+    property_context: Optional[dict] = None
+
+class ChatRequest(BaseModel):
+    message: str
+    conversation_id: Optional[str] = None
+    property_context: Optional[dict] = None  # Guest profile, competitive advantage, booking patterns
+
+class ChatResponse(BaseModel):
+    response: str
+    conversation_id: str
+
+class GetConversationRequest(BaseModel):
+    conversation_id: str
+
+class GetConversationResponse(BaseModel):
+    conversation_id: str
+    messages: List[ChatMessage]
+    property_context: Optional[dict] = None
+
+def create_conversation(conversation_id: str, property_context: Optional[dict] = None) -> None:
+    """Create a new conversation in storage"""
+    conversations_store[conversation_id] = {
+        "messages": [],
+        "created_at": datetime.datetime.now(),
+        "last_message_at": datetime.datetime.now(),
+        "property_context": property_context
+    }
+    print(f"📝 Created new conversation: {conversation_id}")
+
+def add_message_to_conversation(conversation_id: str, role: str, content: str) -> None:
+    """Add a message to the conversation history"""
+    if conversation_id not in conversations_store:
+        create_conversation(conversation_id)
+    
+    message = {
+        "role": role,
+        "content": content,
+        "timestamp": datetime.datetime.now()
+    }
+    
+    conversations_store[conversation_id]["messages"].append(message)
+    conversations_store[conversation_id]["last_message_at"] = datetime.datetime.now()
+    
+    # Limit conversation history to prevent token overflow
+    if len(conversations_store[conversation_id]["messages"]) > MAX_CONVERSATION_HISTORY:
+        # Keep the system message (if any) and the most recent messages
+        messages = conversations_store[conversation_id]["messages"]
+        system_messages = [msg for msg in messages if msg["role"] == "system"]
+        recent_messages = messages[-(MAX_CONVERSATION_HISTORY-len(system_messages)):]
+        conversations_store[conversation_id]["messages"] = system_messages + recent_messages
+        print(f"🗂️ Trimmed conversation {conversation_id} to {len(conversations_store[conversation_id]['messages'])} messages")
+
+def get_conversation_messages(conversation_id: str) -> List[Dict]:
+    """Get all messages from a conversation"""
+    if conversation_id not in conversations_store:
+        return []
+    return conversations_store[conversation_id]["messages"]
+
+def build_openai_messages(conversation_id: str, system_prompt: str) -> List[Dict]:
+    """Build OpenAI messages array with conversation history"""
+    messages = [{"role": "system", "content": system_prompt}]
+    
+    # Add conversation history
+    conversation_messages = get_conversation_messages(conversation_id)
+    for msg in conversation_messages:
+        messages.append({
+            "role": msg["role"],
+            "content": msg["content"]
+        })
+    
+    return messages
 
 def extract_occupancy_for_date(nb_data, target_date, property_bedrooms="3"):
     """
@@ -563,20 +652,9 @@ def fetch_pricing_data(req: FetchRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error occurred while fetching pricing data")
 
-
-
 class AnalyzeRequest(BaseModel):
     nights: List[NightData]
     model: Optional[str] = "gpt-4"
-
-class ChatRequest(BaseModel):
-    message: str
-    conversation_id: Optional[str] = None
-    property_context: Optional[dict] = None  # Guest profile, competitive advantage, booking patterns
-
-class ChatResponse(BaseModel):
-    response: str
-    conversation_id: str
 
 @app.post("/analyze-pricing", response_model=List[LLMResult])
 def analyze_pricing(req: AnalyzeRequest):
@@ -843,7 +921,7 @@ REQUIRED JSON FORMAT:
 
 @app.post("/chat", response_model=ChatResponse)
 def chat_with_ai(req: ChatRequest):
-    """Chat with AI assistant with personalized property context"""
+    """Chat with AI assistant with conversation history and personalized property context"""
     print(f"💬 Received chat request: {req.message[:50]}...")
     
     if not settings.OPENAI_API_KEY:
@@ -853,17 +931,33 @@ def chat_with_ai(req: ChatRequest):
     try:
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
         
+        # Generate or use provided conversation ID
+        conversation_id = req.conversation_id or f"chat_{uuid.uuid4().hex[:8]}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # Create conversation if it doesn't exist
+        if conversation_id not in conversations_store:
+            create_conversation(conversation_id, req.property_context)
+        
+        # Update property context if provided
+        if req.property_context and conversation_id in conversations_store:
+            conversations_store[conversation_id]["property_context"] = req.property_context
+            print("📝 Updated property context for conversation")
+        
         # Build enhanced system prompt with property context
         base_prompt = """You are an expert AI assistant for short-term rental property management, specializing in luxury properties. 
 You provide intelligent, actionable advice about pricing, marketing, guest experience, and revenue optimization.
-Keep responses conversational but professional, and always consider the specific property context provided."""
+Keep responses conversational but professional, and always consider the specific property context provided.
+Remember previous messages in this conversation to provide contextual and relevant advice."""
+        
+        # Get property context from conversation or request
+        property_context = req.property_context or conversations_store.get(conversation_id, {}).get("property_context")
         
         context_prompt = ""
-        if req.property_context:
+        if property_context:
             print("📝 Including property context in system prompt...")
-            guest_profile = req.property_context.get('guestProfile', '')
-            competitive_advantage = req.property_context.get('competitiveAdvantage', '')
-            booking_patterns = req.property_context.get('bookingPatterns', '')
+            guest_profile = property_context.get('guestProfile', '')
+            competitive_advantage = property_context.get('competitiveAdvantage', '')
+            booking_patterns = property_context.get('bookingPatterns', '')
             
             if guest_profile or competitive_advantage or booking_patterns:
                 context_prompt = f"""
@@ -883,13 +977,18 @@ Always reference this context when providing pricing, marketing, or operational 
         
         system_prompt = base_prompt + context_prompt
         
-        print(f"🤖 Calling OpenAI Chat API with {'enhanced' if context_prompt else 'basic'} context...")
+        # Add user message to conversation history
+        add_message_to_conversation(conversation_id, "user", req.message)
+        
+        # Build OpenAI messages with full conversation history
+        messages = build_openai_messages(conversation_id, system_prompt)
+        
+        print(f"🤖 Calling OpenAI Chat API with conversation history ({len(messages)-1} previous messages)...")
+        print(f"🗂️ Conversation ID: {conversation_id}")
+        
         response = client.chat.completions.create(
             model="gpt-4",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": req.message}
-            ],
+            messages=messages,
             temperature=0.7,
             max_tokens=500
         )
@@ -897,8 +996,10 @@ Always reference this context when providing pricing, marketing, or operational 
         ai_response = response.choices[0].message.content
         print(f"✅ AI response received (length: {len(ai_response)})")
         
-        # Generate or use provided conversation ID
-        conversation_id = req.conversation_id or f"chat_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Add AI response to conversation history
+        add_message_to_conversation(conversation_id, "assistant", ai_response)
+        
+        print(f"💾 Conversation {conversation_id} now has {len(conversations_store[conversation_id]['messages'])} messages")
         
         return ChatResponse(
             response=ai_response,
@@ -910,6 +1011,63 @@ Always reference this context when providing pricing, marketing, or operational 
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Chat service error: {str(e)}")
+
+@app.post("/get-conversation", response_model=GetConversationResponse)
+def get_conversation(req: GetConversationRequest):
+    """Retrieve full conversation history"""
+    print(f"📖 Retrieving conversation: {req.conversation_id}")
+    
+    if req.conversation_id not in conversations_store:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    conversation = conversations_store[req.conversation_id]
+    
+    # Convert stored messages to response format
+    messages = []
+    for msg in conversation["messages"]:
+        messages.append(ChatMessage(
+            role=msg["role"],
+            content=msg["content"],
+            timestamp=msg["timestamp"]
+        ))
+    
+    return GetConversationResponse(
+        conversation_id=req.conversation_id,
+        messages=messages,
+        property_context=conversation.get("property_context")
+    )
+
+@app.get("/conversations", response_model=List[ConversationInfo])
+def list_conversations():
+    """List all conversations"""
+    print(f"📋 Listing {len(conversations_store)} conversations")
+    
+    conversations = []
+    for conv_id, conv_data in conversations_store.items():
+        conversations.append(ConversationInfo(
+            conversation_id=conv_id,
+            created_at=conv_data["created_at"],
+            last_message_at=conv_data["last_message_at"],
+            message_count=len(conv_data["messages"]),
+            property_context=conv_data.get("property_context")
+        ))
+    
+    # Sort by last message time (most recent first)
+    conversations.sort(key=lambda x: x.last_message_at, reverse=True)
+    
+    return conversations
+
+@app.delete("/conversation/{conversation_id}")
+def delete_conversation(conversation_id: str):
+    """Delete a conversation"""
+    print(f"🗑️ Deleting conversation: {conversation_id}")
+    
+    if conversation_id not in conversations_store:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    del conversations_store[conversation_id]
+    
+    return {"message": f"Conversation {conversation_id} deleted successfully"}
 
 class SingleOverrideRequest(BaseModel):
     api_key: str
