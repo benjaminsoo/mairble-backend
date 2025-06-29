@@ -633,14 +633,15 @@ def fetch_pricing_data(req: FetchRequest):
             print("⚠️ No available nights found after filtering")
             raise HTTPException(status_code=404, detail="No available nights found for the specified listing. Check your listing ID or try a different date range.")
         
-        # Return first 5 nights for testing
-        result_nights = available_nights[:5]
-        
-        # Debug: Print the full result_nights data structure
-        print(f"🔍 RESULT_NIGHTS DEBUG: Found {len(result_nights)} nights")
-        for i, night in enumerate(result_nights):
-            print(f"  Night {i+1}: {night.date} - Your: ${night.your_price} | Market: ${night.market_avg_price} | Event: {night.event}")
-        print(f"📋 Full result_nights data: {[{'date': n.date, 'your_price': n.your_price, 'market_avg_price': n.market_avg_price, 'event': n.event} for n in result_nights]}")
+        # Determine how many nights to return based on request parameters
+        if req.date_from and req.date_to:
+            # For custom date ranges, return all available nights (no limit)
+            result_nights = available_nights
+            print(f"📅 Custom date range requested: returning all {len(result_nights)} available nights")
+        else:
+            # For default requests, return first 5 nights (existing behavior)
+            result_nights = available_nights[:5]
+            print(f"📅 Default request: returning first {len(result_nights)} nights")
         
         for night in result_nights:
             historical_info = f" | LY: ${night.adr_last_year}" if night.adr_last_year else ""
@@ -675,14 +676,14 @@ def analyze_pricing(req: AnalyzeRequest):
     client = OpenAI(api_key=settings.OPENAI_API_KEY)
     results = []
     
-    # Only process the first 5 nights for testing
-    nights_to_process = req.nights[:5]
+    # Process all provided nights (frontend handles chunking)
+    nights_to_process = req.nights
     print(f"🧠 Processing {len(nights_to_process)} nights with AI analysis...")
     
     for i, night in enumerate(nights_to_process):
         historical_context = f" (LY: ${night.adr_last_year})" if night.adr_last_year else ""
         demand_level = f" D{night.neighborhood_demand}" if night.neighborhood_demand else ""
-        print(f"📅 Night {i+1}/5: {night.date} - ${night.your_price} vs ${night.market_avg_price} market{historical_context}{demand_level}")
+        print(f"📅 Night {i+1}/{len(nights_to_process)}: {night.date} - ${night.your_price} vs ${night.market_avg_price} market{historical_context}{demand_level}")
     
     for night in nights_to_process:
         print(f"🔄 Analyzing night: {night.date}")
