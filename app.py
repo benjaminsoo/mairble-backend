@@ -636,6 +636,12 @@ def fetch_pricing_data(req: FetchRequest):
         # Return first 5 nights for testing
         result_nights = available_nights[:5]
         
+        # Debug: Print the full result_nights data structure
+        print(f"🔍 RESULT_NIGHTS DEBUG: Found {len(result_nights)} nights")
+        for i, night in enumerate(result_nights):
+            print(f"  Night {i+1}: {night.date} - Your: ${night.your_price} | Market: ${night.market_avg_price} | Event: {night.event}")
+        print(f"📋 Full result_nights data: {[{'date': n.date, 'your_price': n.your_price, 'market_avg_price': n.market_avg_price, 'event': n.event} for n in result_nights]}")
+        
         for night in result_nights:
             historical_info = f" | LY: ${night.adr_last_year}" if night.adr_last_year else ""
             demand_info = f" | Demand: {night.neighborhood_demand}" if night.neighborhood_demand else ""
