@@ -963,10 +963,16 @@ Remember previous messages in this conversation to provide contextual and releva
         if property_context:
             print("📝 Including property context in system prompt...")
             main_guest = property_context.get('mainGuest', '')
-            special_feature = property_context.get('specialFeature', '')
-            pricing_goal = property_context.get('pricingGoal', '')
+            special_features = property_context.get('specialFeature', [])
+            pricing_goals = property_context.get('pricingGoal', [])
             
-            if main_guest or special_feature or pricing_goal:
+            # Handle backward compatibility - convert strings to arrays if needed
+            if isinstance(special_features, str):
+                special_features = [special_features] if special_features else []
+            if isinstance(pricing_goals, str):
+                pricing_goals = [pricing_goals] if pricing_goals else []
+            
+            if main_guest or special_features or pricing_goals:
                 # Build highly specific context based on user selections
                 guest_context = ""
                 if main_guest == "Leisure":
@@ -976,29 +982,42 @@ Remember previous messages in this conversation to provide contextual and releva
                 elif main_guest == "Groups":
                     guest_context = """TARGET GUESTS: Groups (parties, retreats, events) who are highly sensitive to per-person cost and look for capacity and entertainment amenities. Key booking periods: weekends and events. Price sensitivity: High for per-person cost. Focus: Group capacity and entertainment value."""
                 
+                feature_contexts = []
+                feature_map = {
+                    "Location": "Prime location (beachfront, downtown, mountain view) - proximity to key attractions, natural beauty, or urban convenience. This is often the #1 driver for guests. Price premium justified by location exclusivity.",
+                    "Unique Amenity": "Unique amenity (hot tub, pool, sauna, home theater) - specific features that are rare or highly desirable in your market. Strong premium pricing justified by amenity scarcity.",
+                    "Size/Capacity": "Large size/capacity (sleeps 10+, multiple bedrooms/baths) - ability to accommodate larger groups. Higher per-night rates and less competition in large-group segment.",
+                    "Luxury/Design": "Luxury/high-end design (premium finishes, architecturally unique) - appeals to discerning guests willing to pay significantly more for aesthetic and comfort.",
+                    "Pet-Friendly": "Pet-friendly with specific features (fenced yard) - taps into underserved market segment willing to pay premium for pet accommodation.",
+                    "Exceptional View": "Exceptional view (ocean, city skyline, mountain panorama) - visual appeal that significantly enhances guest experience and justifies higher rates.",
+                    "Unique Experience": "Unique experience (historic property, farm stay, glamping) - offers something truly different that guests can't find elsewhere, creating strong demand and pricing power."
+                }
+                
+                for feature in special_features:
+                    if feature in feature_map:
+                        feature_contexts.append(feature_map[feature])
+                
                 feature_context = ""
-                if special_feature == "Location":
-                    feature_context = """COMPETITIVE ADVANTAGE: Prime location (beachfront, downtown, mountain view) - proximity to key attractions, natural beauty, or urban convenience. This is often the #1 driver for guests. Price premium justified by location exclusivity."""
-                elif special_feature == "Unique Amenity":
-                    feature_context = """COMPETITIVE ADVANTAGE: Unique amenity (hot tub, pool, sauna, home theater) - specific features that are rare or highly desirable in your market. Strong premium pricing justified by amenity scarcity."""
-                elif special_feature == "Size/Capacity":
-                    feature_context = """COMPETITIVE ADVANTAGE: Large size/capacity (sleeps 10+, multiple bedrooms/baths) - ability to accommodate larger groups. Higher per-night rates and less competition in large-group segment."""
-                elif special_feature == "Luxury/Design":
-                    feature_context = """COMPETITIVE ADVANTAGE: Luxury/high-end design (premium finishes, architecturally unique) - appeals to discerning guests willing to pay significantly more for aesthetic and comfort."""
-                elif special_feature == "Pet-Friendly":
-                    feature_context = """COMPETITIVE ADVANTAGE: Pet-friendly with specific features (fenced yard) - taps into underserved market segment willing to pay premium for pet accommodation."""
-                elif special_feature == "Exceptional View":
-                    feature_context = """COMPETITIVE ADVANTAGE: Exceptional view (ocean, city skyline, mountain panorama) - visual appeal that significantly enhances guest experience and justifies higher rates."""
-                elif special_feature == "Unique Experience":
-                    feature_context = """COMPETITIVE ADVANTAGE: Unique experience (historic property, farm stay, glamping) - offers something truly different that guests can't find elsewhere, creating strong demand and pricing power."""
+                if feature_contexts:
+                    feature_context = "COMPETITIVE ADVANTAGES:\n" + "\n".join([f"• {ctx}" for ctx in feature_contexts])
+                
+                strategy_contexts = []
+                strategy_map = {
+                    "Fill Dates": "FILL DATES PRIORITY - Always prioritize getting bookings, even at lower prices. The owner would rather get $750 than $0. Be aggressive with discounts to avoid empty nights. Focus on occupancy over rate optimization.",
+                    "Max Price": "MAXIMIZE PRICE - Push for the highest possible rates, even if it means fewer bookings. Highlight the property's special features and target guest's willingness to pay. Premium pricing is the priority.",
+                    "Avoid Bad Guests": "GUEST QUALITY FILTER - Recommend pricing strategies that naturally filter for higher-quality guests. Better to leave money on the table or have lower occupancy than deal with problem guests. Suggest price floors to maintain guest quality."
+                }
+                
+                for goal in pricing_goals:
+                    if goal in strategy_map:
+                        strategy_contexts.append(strategy_map[goal])
                 
                 strategy_context = ""
-                if pricing_goal == "Fill Dates":
-                    strategy_context = """PRICING STRATEGY: FILL DATES PRIORITY - Always prioritize getting bookings, even at lower prices. The owner would rather get $750 than $0. Be aggressive with discounts to avoid empty nights. Focus on occupancy over rate optimization."""
-                elif pricing_goal == "Max Price":
-                    strategy_context = """PRICING STRATEGY: MAXIMIZE PRICE - Push for the highest possible rates, even if it means fewer bookings. Highlight the property's special features and target guest's willingness to pay. Premium pricing is the priority."""
-                elif pricing_goal == "Avoid Bad Guests":
-                    strategy_context = """PRICING STRATEGY: GUEST QUALITY FILTER - Recommend pricing strategies that naturally filter for higher-quality guests. Better to leave money on the table or have lower occupancy than deal with problem guests. Suggest price floors to maintain guest quality."""
+                if strategy_contexts:
+                    if len(strategy_contexts) == 1:
+                        strategy_context = f"PRICING STRATEGY: {strategy_contexts[0]}"
+                    else:
+                        strategy_context = "PRICING STRATEGIES (BALANCED APPROACH):\n" + "\n".join([f"• {ctx}" for ctx in strategy_contexts]) + "\n\nBalance these priorities when making recommendations - consider all selected goals in your advice."
                 
                 context_prompt = f"""
 
