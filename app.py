@@ -962,25 +962,55 @@ Remember previous messages in this conversation to provide contextual and releva
         context_prompt = ""
         if property_context:
             print("📝 Including property context in system prompt...")
-            guest_profile = property_context.get('guestProfile', '')
-            competitive_advantage = property_context.get('competitiveAdvantage', '')
-            booking_patterns = property_context.get('bookingPatterns', '')
+            main_guest = property_context.get('mainGuest', '')
+            special_feature = property_context.get('specialFeature', '')
+            pricing_goal = property_context.get('pricingGoal', '')
             
-            if guest_profile or competitive_advantage or booking_patterns:
+            if main_guest or special_feature or pricing_goal:
+                # Build highly specific context based on user selections
+                guest_context = ""
+                if main_guest == "Leisure":
+                    guest_context = """TARGET GUESTS: Leisure travelers who book further in advance, are sensitive to total cost, and prioritize amenities and experiences. Key booking periods: weekends, holidays, summer. Price sensitivity: High for total cost. Lead time: Longer advance bookings."""
+                elif main_guest == "Business":
+                    guest_context = """TARGET GUESTS: Business travelers who book last-minute, are less price-sensitive, and prioritize location, workspace, and reliable internet. Key booking periods: weekdays. Price sensitivity: Low. Lead time: Short, last-minute bookings."""
+                elif main_guest == "Groups":
+                    guest_context = """TARGET GUESTS: Groups (parties, retreats, events) who are highly sensitive to per-person cost and look for capacity and entertainment amenities. Key booking periods: weekends and events. Price sensitivity: High for per-person cost. Focus: Group capacity and entertainment value."""
+                
+                feature_context = ""
+                if special_feature == "Location":
+                    feature_context = """COMPETITIVE ADVANTAGE: Prime location (beachfront, downtown, mountain view) - proximity to key attractions, natural beauty, or urban convenience. This is often the #1 driver for guests. Price premium justified by location exclusivity."""
+                elif special_feature == "Unique Amenity":
+                    feature_context = """COMPETITIVE ADVANTAGE: Unique amenity (hot tub, pool, sauna, home theater) - specific features that are rare or highly desirable in your market. Strong premium pricing justified by amenity scarcity."""
+                elif special_feature == "Size/Capacity":
+                    feature_context = """COMPETITIVE ADVANTAGE: Large size/capacity (sleeps 10+, multiple bedrooms/baths) - ability to accommodate larger groups. Higher per-night rates and less competition in large-group segment."""
+                elif special_feature == "Luxury/Design":
+                    feature_context = """COMPETITIVE ADVANTAGE: Luxury/high-end design (premium finishes, architecturally unique) - appeals to discerning guests willing to pay significantly more for aesthetic and comfort."""
+                elif special_feature == "Pet-Friendly":
+                    feature_context = """COMPETITIVE ADVANTAGE: Pet-friendly with specific features (fenced yard) - taps into underserved market segment willing to pay premium for pet accommodation."""
+                elif special_feature == "Exceptional View":
+                    feature_context = """COMPETITIVE ADVANTAGE: Exceptional view (ocean, city skyline, mountain panorama) - visual appeal that significantly enhances guest experience and justifies higher rates."""
+                elif special_feature == "Unique Experience":
+                    feature_context = """COMPETITIVE ADVANTAGE: Unique experience (historic property, farm stay, glamping) - offers something truly different that guests can't find elsewhere, creating strong demand and pricing power."""
+                
+                strategy_context = ""
+                if pricing_goal == "Fill Dates":
+                    strategy_context = """PRICING STRATEGY: FILL DATES PRIORITY - Always prioritize getting bookings, even at lower prices. The owner would rather get $750 than $0. Be aggressive with discounts to avoid empty nights. Focus on occupancy over rate optimization."""
+                elif pricing_goal == "Max Price":
+                    strategy_context = """PRICING STRATEGY: MAXIMIZE PRICE - Push for the highest possible rates, even if it means fewer bookings. Highlight the property's special features and target guest's willingness to pay. Premium pricing is the priority."""
+                elif pricing_goal == "Avoid Bad Guests":
+                    strategy_context = """PRICING STRATEGY: GUEST QUALITY FILTER - Recommend pricing strategies that naturally filter for higher-quality guests. Better to leave money on the table or have lower occupancy than deal with problem guests. Suggest price floors to maintain guest quality."""
+                
                 context_prompt = f"""
 
-PROPERTY CONTEXT - Use this to personalize all advice:
+PROPERTY CONTEXT - Use this to personalize ALL pricing and marketing advice:
 
-GUEST PROFILE & VALUE PROPOSITION:
-{guest_profile}
+{guest_context}
 
-COMPETITIVE LANDSCAPE & ADVANTAGES:
-{competitive_advantage}
+{feature_context}
 
-BOOKING PATTERNS & SEASONALITY:
-{booking_patterns}
+{strategy_context}
 
-Always reference this context when providing pricing, marketing, or operational advice. Tailor recommendations specifically to this property's guest type, competitive position, and seasonal patterns."""
+CRITICAL: Always reference this specific context when providing advice. Your recommendations must align with the guest type, competitive advantage, and pricing priority. This context gives you advantages that PriceLabs doesn't have - use it to provide superior, personalized recommendations."""
         
         system_prompt = base_prompt + context_prompt
         
