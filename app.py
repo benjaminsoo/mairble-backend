@@ -8,6 +8,7 @@ import os
 import uuid
 from openai import OpenAI
 from config import get_settings
+from ai_agent import run_agent
 
 # Get application settings
 settings = get_settings()
@@ -96,6 +97,10 @@ class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
     property_context: Optional[dict] = None  # Guest profile, competitive advantage, booking patterns
+    # Optional API credentials for testing/direct usage
+    api_key: Optional[str] = None
+    listing_id: Optional[str] = None
+    pms: Optional[str] = None
 
 class ChatResponse(BaseModel):
     response: str
@@ -927,8 +932,8 @@ REQUIRED JSON FORMAT:
     return results 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat_with_ai(req: ChatRequest):
-    """Chat with AI assistant with conversation history and personalized property context"""
+async def chat_with_ai(req: ChatRequest):
+    """Simple chat with Pydantic AI agent"""
     print(f"💬 Received chat request: {req.message[:50]}...")
     
     if not settings.OPENAI_API_KEY:
@@ -936,126 +941,43 @@ def chat_with_ai(req: ChatRequest):
         raise HTTPException(status_code=500, detail="OpenAI API key not configured.")
     
     try:
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        
         # Generate or use provided conversation ID
         conversation_id = req.conversation_id or f"chat_{uuid.uuid4().hex[:8]}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
-        # Create conversation if it doesn't exist
+        # Create conversation if it doesn't exist (keep existing conversation system for now)
         if conversation_id not in conversations_store:
             create_conversation(conversation_id, req.property_context)
+        
+        # Add user message to conversation history
+        add_message_to_conversation(conversation_id, "user", req.message)
+        
+        # Use API credentials from request if provided, otherwise fall back to settings
+        api_key = req.api_key or settings.PRICELABS_API_KEY
+        listing_id = req.listing_id or settings.LISTING_ID
+        pms = req.pms or settings.PMS
         
         # Update property context if provided
         if req.property_context and conversation_id in conversations_store:
             conversations_store[conversation_id]["property_context"] = req.property_context
             print("📝 Updated property context for conversation")
         
-        # Build enhanced system prompt with property context
-        base_prompt = """You are an expert AI assistant for short-term rental property management, specializing in luxury properties. 
-You provide intelligent, actionable advice about pricing, marketing, guest experience, and revenue optimization.
-Keep responses conversational but professional, and always consider the specific property context provided.
-Remember previous messages in this conversation to provide contextual and relevant advice."""
-        
         # Get property context from conversation or request
         property_context = req.property_context or conversations_store.get(conversation_id, {}).get("property_context")
         
-        context_prompt = ""
-        if property_context:
-            print("📝 Including property context in system prompt...")
-            main_guest = property_context.get('mainGuest', '')
-            special_features = property_context.get('specialFeature', [])
-            pricing_goals = property_context.get('pricingGoal', [])
-            
-            # Handle backward compatibility - convert strings to arrays if needed
-            if isinstance(special_features, str):
-                special_features = [special_features] if special_features else []
-            if isinstance(pricing_goals, str):
-                pricing_goals = [pricing_goals] if pricing_goals else []
-            
-            if main_guest or special_features or pricing_goals:
-                # Build highly specific context based on user selections
-                guest_context = ""
-                if main_guest == "Leisure":
-                    guest_context = """TARGET GUESTS: Leisure travelers who book further in advance, are sensitive to total cost, and prioritize amenities and experiences. Key booking periods: weekends, holidays, summer. Price sensitivity: High for total cost. Lead time: Longer advance bookings."""
-                elif main_guest == "Business":
-                    guest_context = """TARGET GUESTS: Business travelers who book last-minute, are less price-sensitive, and prioritize location, workspace, and reliable internet. Key booking periods: weekdays. Price sensitivity: Low. Lead time: Short, last-minute bookings."""
-                elif main_guest == "Groups":
-                    guest_context = """TARGET GUESTS: Groups (parties, retreats, events) who are highly sensitive to per-person cost and look for capacity and entertainment amenities. Key booking periods: weekends and events. Price sensitivity: High for per-person cost. Focus: Group capacity and entertainment value."""
-                
-                feature_contexts = []
-                feature_map = {
-                    "Location": "Prime location (beachfront, downtown, mountain view) - proximity to key attractions, natural beauty, or urban convenience. This is often the #1 driver for guests. Price premium justified by location exclusivity.",
-                    "Unique Amenity": "Unique amenity (hot tub, pool, sauna, home theater) - specific features that are rare or highly desirable in your market. Strong premium pricing justified by amenity scarcity.",
-                    "Size/Capacity": "Large size/capacity (sleeps 10+, multiple bedrooms/baths) - ability to accommodate larger groups. Higher per-night rates and less competition in large-group segment.",
-                    "Luxury/Design": "Luxury/high-end design (premium finishes, architecturally unique) - appeals to discerning guests willing to pay significantly more for aesthetic and comfort.",
-                    "Pet-Friendly": "Pet-friendly with specific features (fenced yard) - taps into underserved market segment willing to pay premium for pet accommodation.",
-                    "Exceptional View": "Exceptional view (ocean, city skyline, mountain panorama) - visual appeal that significantly enhances guest experience and justifies higher rates.",
-                    "Unique Experience": "Unique experience (historic property, farm stay, glamping) - offers something truly different that guests can't find elsewhere, creating strong demand and pricing power."
-                }
-                
-                for feature in special_features:
-                    if feature in feature_map:
-                        feature_contexts.append(feature_map[feature])
-                
-                feature_context = ""
-                if feature_contexts:
-                    feature_context = "COMPETITIVE ADVANTAGES:\n" + "\n".join([f"• {ctx}" for ctx in feature_contexts])
-                
-                strategy_contexts = []
-                strategy_map = {
-                    "Fill Dates": "FILL DATES PRIORITY - Always prioritize getting bookings, even at lower prices. The owner would rather get $750 than $0. Be aggressive with discounts to avoid empty nights. Focus on occupancy over rate optimization.",
-                    "Max Price": "MAXIMIZE PRICE - Push for the highest possible rates, even if it means fewer bookings. Highlight the property's special features and target guest's willingness to pay. Premium pricing is the priority.",
-                    "Avoid Bad Guests": "GUEST QUALITY FILTER - Recommend pricing strategies that naturally filter for higher-quality guests. Better to leave money on the table or have lower occupancy than deal with problem guests. Suggest price floors to maintain guest quality."
-                }
-                
-                for goal in pricing_goals:
-                    if goal in strategy_map:
-                        strategy_contexts.append(strategy_map[goal])
-                
-                strategy_context = ""
-                if strategy_contexts:
-                    if len(strategy_contexts) == 1:
-                        strategy_context = f"PRICING STRATEGY: {strategy_contexts[0]}"
-                    else:
-                        strategy_context = "PRICING STRATEGIES (BALANCED APPROACH):\n" + "\n".join([f"• {ctx}" for ctx in strategy_contexts]) + "\n\nBalance these priorities when making recommendations - consider all selected goals in your advice."
-                
-                context_prompt = f"""
-
-PROPERTY CONTEXT - Use this to personalize ALL pricing and marketing advice:
-
-{guest_context}
-
-{feature_context}
-
-{strategy_context}
-
-CRITICAL: Always reference this specific context when providing advice. Your recommendations must align with the guest type, competitive advantage, and pricing priority. This context gives you advantages that PriceLabs doesn't have - use it to provide superior, personalized recommendations."""
-        
-        system_prompt = base_prompt + context_prompt
-        
-        # Add user message to conversation history
-        add_message_to_conversation(conversation_id, "user", req.message)
-        
-        # Build OpenAI messages with full conversation history
-        messages = build_openai_messages(conversation_id, system_prompt)
-        
-        print(f"🤖 Calling OpenAI Chat API with conversation history ({len(messages)-1} previous messages)...")
-        print(f"🗂️ Conversation ID: {conversation_id}")
-        
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=500
+        # Run the Pydantic AI agent with property context
+        ai_response = await run_agent(
+            message=req.message,
+            api_key=api_key,
+            listing_id=listing_id,
+            pms=pms,
+            property_context=property_context
         )
         
-        ai_response = response.choices[0].message.content
         print(f"✅ AI response received (length: {len(ai_response)})")
+        print(f"🤖 Response: {ai_response}")
         
         # Add AI response to conversation history
         add_message_to_conversation(conversation_id, "assistant", ai_response)
-        
-        print(f"💾 Conversation {conversation_id} now has {len(conversations_store[conversation_id]['messages'])} messages")
         
         return ChatResponse(
             response=ai_response,
