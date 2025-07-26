@@ -22,7 +22,7 @@ def test_chat_endpoint():
     
     # Test message with API credentials
     payload = {
-        "message": "What are the next booking gaps?",
+        "message": "What is august 10 currently priced at?",
         "conversation_id": None,  # Let it create a new conversation
         "api_key": api_key,
         "listing_id": listing_id,
@@ -43,7 +43,7 @@ def test_chat_endpoint():
         print(f"📤 Sending: {payload['message']}")
         print("⏳ Waiting for response...")
         
-        response = requests.post(url, json=payload, timeout=30)
+        response = requests.post(url, json=payload, timeout=60)
         
         if response.status_code == 200:
             data = response.json()
