@@ -3,12 +3,12 @@ fastapi==0.115.5
 uvicorn[standard]==0.32.1
 pydantic>=2.10.0
 
-# HTTP client
-requests==2.31.0
+# HTTP client (updated for pydantic-ai compatibility)
+requests>=2.32.3
 
-# AI integration
+# AI integration (only OpenAI extras to avoid conflicts)
 openai>=1.0.0
-pydantic-ai>=0.0.14
+pydantic-ai[openai]>=0.0.14
 
 # Production server (Railway uses this)
 gunicorn==21.2.0
