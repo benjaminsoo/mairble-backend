@@ -39,6 +39,9 @@ def add_property_context(ctx: RunContext[dict]) -> str:
     goals = property_context.get('pricingGoal', [])
     feature_details = property_context.get('specialFeatureDetails', {})
     
+    print(f"🔍 Property context received - features: {features}")
+    print(f"🔍 Feature details received: {feature_details}")
+    
     if isinstance(features, str):
         features = [features] if features else []
     if isinstance(goals, str):
@@ -77,9 +80,11 @@ def add_property_context(ctx: RunContext[dict]) -> str:
             # Use custom description provided by user
             custom_desc = feature_details[feature].strip()
             advantages.append(f"{feature}: {custom_desc}")
+            print(f"🎯 Using custom description for {feature}: {custom_desc}")
         elif feature in advantage_map:
             # Fallback to default description
             advantages.append(f"{feature}: {advantage_map[feature]}")
+            print(f"📝 Using default description for {feature}")
     
     if advantages:
         sections.append("ADVANTAGES: " + "; ".join(advantages))
@@ -283,6 +288,9 @@ def get_pricing_suggestion(ctx: RunContext[dict], dates: str) -> str:
                 goals = property_context.get('pricingGoal', [])
                 feature_details = property_context.get('specialFeatureDetails', {})
                 
+                print(f"🔍 Pricing tool - features: {features}")
+                print(f"🔍 Pricing tool - feature details: {feature_details}")
+                
                 if isinstance(features, str):
                     features = [features] if features else []
                 if isinstance(goals, str):
@@ -318,9 +326,11 @@ def get_pricing_suggestion(ctx: RunContext[dict], dates: str) -> str:
                         # Use custom description provided by user
                         custom_desc = feature_details[feature].strip()
                         advantages.append(f"{feature}: {custom_desc}")
+                        print(f"🎯 Using custom description for {feature}: {custom_desc}")
                     elif feature in advantage_map:
                         # Fallback to default description
                         advantages.append(f"{feature}: {advantage_map[feature]}")
+                        print(f"📝 Using default description for {feature}")
                 
                 if advantages:
                     sections.append("ADVANTAGES: " + "; ".join(advantages))
