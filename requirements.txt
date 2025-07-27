@@ -6,8 +6,9 @@ pydantic==2.5.0
 # HTTP client
 requests==2.31.0
 
-# OpenAI integration
+# AI integration
 openai>=1.0.0
+pydantic-ai>=0.0.14
 
 # Production server (Railway uses this)
 gunicorn==21.2.0
