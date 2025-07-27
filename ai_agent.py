@@ -37,6 +37,7 @@ def add_property_context(ctx: RunContext[dict]) -> str:
     main_guest = property_context.get('mainGuest', '')
     features = property_context.get('specialFeature', [])
     goals = property_context.get('pricingGoal', [])
+    feature_details = property_context.get('specialFeatureDetails', {})
     
     if isinstance(features, str):
         features = [features] if features else []
@@ -51,14 +52,15 @@ def add_property_context(ctx: RunContext[dict]) -> str:
     
     # Guest targeting
     guest_profiles = {
-        "Leisure": "TARGET: Leisure travelers. Book advance, price-sensitive, want amenities. Peak: weekends/holidays.",
-        "Business": "TARGET: Business travelers. Book last-minute, less price-sensitive, need workspace. Peak: weekdays.",
-        "Groups": "TARGET: Groups/events. Price-sensitive per-person, need capacity/entertainment. Peak: weekends."
+        "Leisure": "MAIN GUEST: Leisure travelers. Higher pricing on weekends. More conservative pricing on weekdays.",
+        "Business": "MAIN_GUEST: Business travelers. More balanced pricing throughout the week.",
+        "Groups": "MAIN_GUEST: Groups/events.",
+        "Balanced": "MAIN_GUEST: Variety of guests. Adapt pricing to demand patterns - premium weekends for leisure, competitive but conservative weekdays for business."
     }
     if main_guest in guest_profiles:
         sections.append(guest_profiles[main_guest])
     
-    # Competitive advantages
+    # Competitive advantages - use custom descriptions if available, otherwise fallback to defaults
     advantage_map = {
         "Location": "Prime location - #1 guest driver, premium justified",
         "Unique Amenity": "Rare amenity (pool/hot tub) - strong premium justified",
@@ -68,7 +70,17 @@ def add_property_context(ctx: RunContext[dict]) -> str:
         "Exceptional View": "Exceptional view - visual appeal justifies higher rates",
         "Unique Experience": "Unique property type - strong demand, pricing power"
     }
-    advantages = [advantage_map[f] for f in features if f in advantage_map]
+    
+    advantages = []
+    for feature in features:
+        if feature in feature_details and feature_details[feature].strip():
+            # Use custom description provided by user
+            custom_desc = feature_details[feature].strip()
+            advantages.append(f"{feature}: {custom_desc}")
+        elif feature in advantage_map:
+            # Fallback to default description
+            advantages.append(f"{feature}: {advantage_map[feature]}")
+    
     if advantages:
         sections.append("ADVANTAGES: " + "; ".join(advantages))
     
@@ -269,6 +281,7 @@ def get_pricing_suggestion(ctx: RunContext[dict], dates: str) -> str:
                 main_guest = property_context.get('mainGuest', '')
                 features = property_context.get('specialFeature', [])
                 goals = property_context.get('pricingGoal', [])
+                feature_details = property_context.get('specialFeatureDetails', {})
                 
                 if isinstance(features, str):
                     features = [features] if features else []
@@ -280,14 +293,15 @@ def get_pricing_suggestion(ctx: RunContext[dict], dates: str) -> str:
                 
                 # Guest targeting
                 guest_profiles = {
-                    "Leisure": "TARGET: Leisure travelers. Book advance, price-sensitive, want amenities. Peak: weekends/holidays.",
-                    "Business": "TARGET: Business travelers. Book last-minute, less price-sensitive, need workspace. Peak: weekdays.",
-                    "Groups": "TARGET: Groups/events. Price-sensitive per-person, need capacity/entertainment. Peak: weekends."
+                    "Leisure": "MAIN GUEST: Leisure travelers. Higher pricing on weekends. More conservative pricing on weekdays.",
+                    "Business": "MAIN_GUEST: Business travelers. More balanced pricing throughout the week.",
+                    "Groups": "MAIN_GUEST: Groups/events.",
+                    "Balanced": "MAIN_GUEST: Variety of guests. Adapt pricing to demand patterns - premium weekends for leisure, competitive but conservative weekdays for business."
                 }
                 if main_guest in guest_profiles:
                     sections.append(guest_profiles[main_guest])
                 
-                # Competitive advantages
+                # Competitive advantages - use custom descriptions if available, otherwise fallback to defaults
                 advantage_map = {
                     "Location": "Prime location - #1 guest driver, premium justified",
                     "Unique Amenity": "Rare amenity (pool/hot tub) - strong premium justified",
@@ -297,7 +311,17 @@ def get_pricing_suggestion(ctx: RunContext[dict], dates: str) -> str:
                     "Exceptional View": "Exceptional view - visual appeal justifies higher rates",
                     "Unique Experience": "Unique property type - strong demand, pricing power"
                 }
-                advantages = [advantage_map[f] for f in features if f in advantage_map]
+                
+                advantages = []
+                for feature in features:
+                    if feature in feature_details and feature_details[feature].strip():
+                        # Use custom description provided by user
+                        custom_desc = feature_details[feature].strip()
+                        advantages.append(f"{feature}: {custom_desc}")
+                    elif feature in advantage_map:
+                        # Fallback to default description
+                        advantages.append(f"{feature}: {advantage_map[feature]}")
+                
                 if advantages:
                     sections.append("ADVANTAGES: " + "; ".join(advantages))
                 
@@ -309,7 +333,7 @@ def get_pricing_suggestion(ctx: RunContext[dict], dates: str) -> str:
                 }
                 strategies = [strategy_map[g] for g in goals if g in strategy_map]
                 if strategies:
-                    prefix = "STRATEGY" if len(strategies) == 1 else "STRATEGIES (balance)"
+                    prefix = "PRICING STRATEGY" if len(strategies) == 1 else "STRATEGIES (balance)"
                     sections.append(f"{prefix}: {'; '.join(strategies)}")
                 
                 if sections:
