@@ -632,7 +632,7 @@ def get_intelligent_market_fallback(your_price, date, location="Newport, RI"):
 @agent.tool
 def get_revenue_forecast(ctx: RunContext[dict], date_from: str, date_to: str) -> str:
     """
-    Calculate revenue projections for a date range, splitting booked vs unbooked revenue.
+    Calculate revenue projections for a date range, splitting booked vs unbooked revenue. Also works when user wants to know what a certain date or multiple dates is priced at.
     
     Args:
         date_from: Start date in YYYY-MM-DD format
@@ -714,6 +714,7 @@ def get_revenue_forecast(ctx: RunContext[dict], date_from: str, date_to: str) ->
             user_price = night.get("user_price", 0)
             booking_status = night.get("booking_status", "")
             unbookable = night.get("unbookable", 0)
+            adr = night.get("ADR", 0)
             
             # Skip if no price data
             if not price:
@@ -721,8 +722,9 @@ def get_revenue_forecast(ctx: RunContext[dict], date_from: str, date_to: str) ->
             
             # Categorize by booking status
             if booking_status and "booked" in booking_status.lower():
-                # Booked nights: Use 'price' field (actual booking price), ignore 'user_price' (-1)
-                booked_revenue += price
+                # Booked nights: Use 'ADR' field (actual daily rate) for booked dates
+                booked_price = adr if adr > 0 else price  # Fallback to price if ADR not available
+                booked_revenue += booked_price
                 booked_nights += 1
             elif unbookable != 0:
                 unbookable_nights += 1
