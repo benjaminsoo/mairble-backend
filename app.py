@@ -717,11 +717,18 @@ def fetch_listings(req: ListingsRequest):
         # Fetch listings from PriceLabs API
         listings_url = f"{BASE_URL}/v1/listings"
         
+        # Add query parameters to filter results like the curl example
+        params = {
+            "skip_hidden": "true",
+            "only_syncing_listings": "true"
+        }
+        
         print(f"📡 Calling PriceLabs listings API...")
         print(f"URL: {listings_url}")
+        print(f"Params: {params}")
         print(f"Headers: {HEADERS}")
         
-        resp = requests.get(listings_url, headers=HEADERS)
+        resp = requests.get(listings_url, headers=HEADERS, params=params)
         print(f"Response status: {resp.status_code}")
         
         if resp.status_code != 200:
@@ -738,14 +745,26 @@ def fetch_listings(req: ListingsRequest):
         try:
             response_data = resp.json()
             print(f"✅ Parsed JSON response. Type: {type(response_data)}")
+            print(f"Response keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'Not a dict'}")
             
-            # PriceLabs listings API returns: {"data": [{"listings": [...]}]}
-            if isinstance(response_data, dict) and "data" in response_data:
+            # Handle the actual PriceLabs API response structure
+            if isinstance(response_data, dict) and "listings" in response_data:
+                # Direct format: {"listings": [...]}
+                listings_data = response_data["listings"]
+                print(f"Found {len(listings_data)} listings in direct format")
+            elif isinstance(response_data, dict) and "data" in response_data:
+                # Nested format: {"data": [{"listings": [...]}]}
                 data = response_data["data"]
                 if isinstance(data, list) and len(data) > 0 and "listings" in data[0]:
                     listings_data = data[0]["listings"]
+                    print(f"Found {len(listings_data)} listings in nested format")
                 else:
                     listings_data = []
+                    print("No listings found in nested data format")
+            elif isinstance(response_data, list):
+                # Direct list format: [{"id": "...", ...}, ...]
+                listings_data = response_data
+                print(f"Found {len(listings_data)} listings in direct list format")
             else:
                 print(f"❌ Unexpected response structure: {response_data}")
                 raise HTTPException(status_code=500, detail="Unexpected response format from PriceLabs API")
@@ -759,42 +778,76 @@ def fetch_listings(req: ListingsRequest):
         listings = []
         for listing in listings_data:
             try:
+                # Helper function to safely convert to float
+                def safe_float(value, default=0.0):
+                    if value is None:
+                        return default
+                    if isinstance(value, str):
+                        # Handle percentage strings like "86 %"
+                        if '%' in value:
+                            try:
+                                return float(value.replace('%', '').strip())
+                            except:
+                                return default
+                        # Handle "Unavailable" or other text
+                        if value.lower() in ['unavailable', 'n/a', '']:
+                            return default
+                        try:
+                            return float(value)
+                        except:
+                            return default
+                    try:
+                        return float(value)
+                    except:
+                        return default
+                
+                # Helper function to safely convert to int
+                def safe_int(value, default=0):
+                    if value is None:
+                        return default
+                    try:
+                        return int(float(str(value)))
+                    except:
+                        return default
+                
                 listing_obj = ListingData(
                     id=listing.get("id", ""),
                     pms=listing.get("pms", ""),
                     name=listing.get("name", ""),
-                    latitude=float(listing.get("latitude", 0)),
-                    longitude=float(listing.get("longitude", 0)),
+                    latitude=safe_float(listing.get("latitude")),
+                    longitude=safe_float(listing.get("longitude")),
                     country=listing.get("country", ""),
                     city_name=listing.get("city_name", ""),
                     state=listing.get("state", ""),
-                    no_of_bedrooms=int(listing.get("no_of_bedrooms", 0)),
-                    min=float(listing.get("min", 0)),
-                    base=float(listing.get("base", 0)),
-                    max=float(listing.get("max", 0)),
-                    group=listing.get("group", ""),
-                    subgroup=listing.get("subgroup", ""),
-                    tags=listing.get("tags", ""),
-                    notes=listing.get("notes", ""),
+                    no_of_bedrooms=safe_int(listing.get("no_of_bedrooms")),
+                    min=safe_float(listing.get("min")),
+                    base=safe_float(listing.get("base")),
+                    max=safe_float(listing.get("max")),
+                    group=listing.get("group") or "",
+                    subgroup=listing.get("subgroup") or "",
+                    tags=listing.get("tags") or "",
+                    notes=listing.get("notes") or "",
                     isHidden=bool(listing.get("isHidden", False)),
                     push_enabled=bool(listing.get("push_enabled", False)),
-                    occupancy_next_7=float(listing.get("occupancy_next_7", 0)),
-                    market_occupancy_next_7=float(listing.get("market_occupancy_next_7", 0)),
-                    occupancy_next_30=float(listing.get("occupancy_next_30", 0)),
-                    market_occupancy_next_30=float(listing.get("market_occupancy_next_30", 0)),
-                    occupancy_next_60=float(listing.get("occupancy_next_60", 0)),
-                    market_occupancy_next_60=float(listing.get("market_occupancy_next_60", 0)),
-                    occupancy_past_90=float(listing.get("occupancy_past_90", 0)),
-                    market_occupancy_past_90=float(listing.get("market_occupancy_past_90", 0)),
+                    occupancy_next_7=safe_float(listing.get("occupancy_next_7")),
+                    market_occupancy_next_7=safe_float(listing.get("market_occupancy_next_7")),
+                    occupancy_next_30=safe_float(listing.get("occupancy_next_30")),
+                    market_occupancy_next_30=safe_float(listing.get("market_occupancy_next_30")),
+                    occupancy_next_60=safe_float(listing.get("occupancy_next_60")),
+                    market_occupancy_next_60=safe_float(listing.get("market_occupancy_next_60")),
+                    occupancy_past_90=safe_float(listing.get("occupancy_past_90")),
+                    market_occupancy_past_90=safe_float(listing.get("market_occupancy_past_90")),
                     revenue_past_7=str(listing.get("revenue_past_7", "")),
-                    stly_revenue_past_7=float(listing.get("stly_revenue_past_7", 0)),
-                    recommended_base_price=float(listing.get("recommended_base_price", 0)),
+                    stly_revenue_past_7=safe_float(listing.get("stly_revenue_past_7")),
+                    recommended_base_price=safe_float(listing.get("recommended_base_price")),
                     last_date_pushed=str(listing.get("last_date_pushed", "")),
                     last_refreshed_at=str(listing.get("last_refreshed_at", ""))
                 )
                 listings.append(listing_obj)
+                print(f"✅ Parsed listing: {listing_obj.name} ({listing_obj.no_of_bedrooms} bedrooms)")
             except Exception as e:
                 print(f"⚠️ Error parsing listing {listing.get('id', 'unknown')}: {e}")
+                print(f"   Raw listing data: {listing}")
                 continue
         
         print(f"✅ Successfully parsed {len(listings)} property listings")
