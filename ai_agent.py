@@ -49,86 +49,106 @@ Example formatting:
 def add_property_context(ctx: RunContext[dict]) -> str:
     """Add property context to system prompt if available"""
     property_context = ctx.deps.get('property_context')
-    if not property_context:
+    selected_property = ctx.deps.get('selected_property')
+    
+    # If no context available, return empty
+    if not property_context and not selected_property:
         return ""
     
-    print("📝 Including property context in system prompt...")
-    
-    # Normalize inputs
-    main_guest = property_context.get('mainGuest', '')
-    features = property_context.get('specialFeature', [])
-    goals = property_context.get('pricingGoal', [])
-    feature_details = property_context.get('specialFeatureDetails', {})
-    
-    print(f"🔍 Property context received - features: {features}")
-    print(f"🔍 Feature details received: {feature_details}")
-    
-    if isinstance(features, str):
-        features = [features] if features else []
-    if isinstance(goals, str):
-        goals = [goals] if goals else []
-    
-    if not (main_guest or features or goals):
-        return ""
-    
-    # Build context sections
     sections = []
     
-    # Guest targeting
-    guest_profiles = {
-        "Leisure": "MAIN GUEST: Leisure travelers. Higher pricing on weekends. More conservative pricing on weekdays.",
-        "Business": "MAIN_GUEST: Business travelers. More balanced pricing throughout the week.",
-        "Groups": "MAIN_GUEST: Groups/events.",
-        "Balanced": "MAIN_GUEST: Variety of guests. Adapt pricing to demand patterns - premium weekends for leisure, competitive but conservative weekdays for business."
-    }
-    if main_guest in guest_profiles:
-        sections.append(guest_profiles[main_guest])
+    # Add selected property information
+    if selected_property:
+        prop_name = selected_property.get('name', 'Property')
+        prop_location = selected_property.get('location', 'Unknown Location')
+        prop_bedrooms = selected_property.get('no_of_bedrooms', 'Unknown')
+        
+        property_section = f"""
+CURRENT PROPERTY: {prop_name}
+LOCATION: {prop_location}
+BEDROOMS: {prop_bedrooms} bedroom{'s' if prop_bedrooms != 1 else ''}
+MARKET POSITIONING: Use bedroom count for appropriate market segment positioning and pricing strategy.
+"""
+        sections.append(property_section)
+        print(f"🏠 Including selected property context: {prop_name} - {prop_bedrooms} bedrooms in {prop_location}")
     
-    # Competitive advantages - use custom descriptions if available, otherwise fallback to defaults
-    advantage_map = {
-        "Location": "Prime location - #1 guest driver, premium justified",
-        "Unique Amenity": "Rare amenity (pool/hot tub) - strong premium justified",
-        "Size/Capacity": "Large capacity (10+) - higher rates, less competition",
-        "Luxury/Design": "Luxury finishes - appeals to high-paying guests",
-        "Pet-Friendly": "Pet-friendly - underserved premium market",
-        "Exceptional View": "Exceptional view - visual appeal justifies higher rates",
-        "Unique Experience": "Unique property type - strong demand, pricing power"
-    }
-    
-    advantages = []
-    for feature in features:
-        if feature in feature_details and feature_details[feature].strip():
-            # Use custom description provided by user
-            custom_desc = feature_details[feature].strip()
-            advantages.append(f"{feature}: {custom_desc}")
-            print(f"🎯 Using custom description for {feature}: {custom_desc}")
-        elif feature in advantage_map:
-            # Fallback to default description
-            advantages.append(f"{feature}: {advantage_map[feature]}")
-            print(f"📝 Using default description for {feature}")
-    
-    if advantages:
-        sections.append("ADVANTAGES: " + "; ".join(advantages))
-    
-    # Pricing strategy
-    strategy_map = {
-        "Fill Dates": "FILL DATES: Prioritize occupancy over rate, aggressive discounts",
-        "Max Price": "MAX PRICE: Highest rates priority, highlight premium features",
-        "Avoid Bad Guests": "QUALITY FILTER: Price floors to filter guests"
-    }
-    strategies = [strategy_map[g] for g in goals if g in strategy_map]
-    if strategies:
-        prefix = "STRATEGY" if len(strategies) == 1 else "STRATEGIES (balance)"
-        sections.append(f"{prefix}: {'; '.join(strategies)}")
-    
-    context_prompt = f"""
+    # Add existing property context if available
+    if property_context:
+        print("📝 Including property context in system prompt...")
+        
+        # Normalize inputs
+        main_guest = property_context.get('mainGuest', '')
+        features = property_context.get('specialFeature', [])
+        goals = property_context.get('pricingGoal', [])
+        feature_details = property_context.get('specialFeatureDetails', {})
+        
+        print(f"🔍 Property context received - features: {features}")
+        print(f"🔍 Feature details received: {feature_details}")
+        
+        if isinstance(features, str):
+            features = [features] if features else []
+        if isinstance(goals, str):
+            goals = [goals] if goals else []
+        
+        if main_guest or features or goals:
+            # Build context sections
+            
+            # Guest targeting
+            guest_profiles = {
+                "Leisure": "MAIN GUEST: Leisure travelers. Higher pricing on weekends. More conservative pricing on weekdays.",
+                "Business": "MAIN_GUEST: Business travelers. More balanced pricing throughout the week.",
+                "Groups": "MAIN GUEST: Group travelers. Focus on multi-night stays. Higher value bookings."
+            }
+            if main_guest in guest_profiles:
+                sections.append(guest_profiles[main_guest])
+            
+            # Competitive advantages - use custom descriptions if available, otherwise fallback to defaults
+            advantage_map = {
+                "Location": "Prime location - #1 guest driver, premium justified",
+                "Unique Amenity": "Rare amenity (pool/hot tub) - strong premium justified",
+                "Size/Capacity": "Large capacity (10+) - higher rates, less competition",
+                "Luxury/Design": "Luxury finishes - appeals to high-paying guests",
+                "Pet-Friendly": "Pet-friendly - underserved premium market",
+                "Exceptional View": "Exceptional view - visual appeal justifies higher rates",
+                "Unique Experience": "Unique property type - strong demand, pricing power"
+            }
+            
+            advantages = []
+            for feature in features:
+                if feature in feature_details and feature_details[feature].strip():
+                    # Use custom description provided by user
+                    custom_desc = feature_details[feature].strip()
+                    advantages.append(f"{feature}: {custom_desc}")
+                    print(f"🎯 Using custom description for {feature}: {custom_desc}")
+                elif feature in advantage_map:
+                    # Fallback to default description
+                    advantages.append(f"{feature}: {advantage_map[feature]}")
+                    print(f"📝 Using default description for {feature}")
+            
+            if advantages:
+                sections.append("ADVANTAGES: " + "; ".join(advantages))
+            
+            # Pricing strategy
+            strategy_map = {
+                "Fill Dates": "FILL DATES: Prioritize occupancy over rate, aggressive discounts",
+                "Max Price": "MAX PRICE: Highest rates priority, highlight premium features",
+                "Avoid Bad Guests": "QUALITY FILTER: Price floors to filter guests"
+            }
+            strategies = [strategy_map[g] for g in goals if g in strategy_map]
+            if strategies:
+                prefix = "STRATEGY" if len(strategies) == 1 else "STRATEGIES (balance)"
+                sections.append(f"{prefix}: {'; '.join(strategies)}")
+            
+            context_prompt = f"""
 
 PROPERTY CONTEXT: {' | '.join(sections)}
 
 CRITICAL: Reference this context in all advice. Align recommendations with guest type, advantages, and pricing strategy."""
+            
+            print(f"✅ Property context added: {' | '.join(sections)}")
+            return context_prompt
     
-    print(f"✅ Property context added: {' | '.join(sections)}")
-    return context_prompt
+    return ""
 
 @agent.tool
 def get_pricing_suggestion(ctx: RunContext[dict], dates: str) -> str:
@@ -376,7 +396,7 @@ def get_pricing_suggestion(ctx: RunContext[dict], dates: str) -> str:
             constraints_info = f"Min price: ${min_price_limit:.0f}" if min_price_limit else ""
             stay_info = f"Avg stay: {avg_los_last_year:.0f} nights" if avg_los_last_year else ""
             
-            prompt = f"""Revenue manager for luxury Newport RI STR. Analyze and recommend pricing in JSON:{property_context_str}
+            prompt = f"""You are a revenue manager for a short-term rental property. Analyze and recommend pricing in JSON:{property_context_str}
 
 PROPERTY DATA:
 - Date: {requested_date} ({day_of_week}) - {days_from_today} days from today
@@ -894,7 +914,7 @@ def get_unbooked_openings(ctx: RunContext[dict]) -> str:
         print(f"❌ {error_msg}")
         return error_msg
 
-async def run_agent(message: str, api_key: str, listing_id: str, pms: str = "airbnb", property_context: dict = None) -> str:
+async def run_agent(message: str, api_key: str, listing_id: str, pms: str = "airbnb", property_context: dict = None, selected_property: dict = None) -> str:
     """Run the Pydantic AI agent with user message, API credentials, and optional property context."""
     try:
         # Create dependencies dictionary with API credentials and property context
@@ -902,7 +922,8 @@ async def run_agent(message: str, api_key: str, listing_id: str, pms: str = "air
             "api_key": api_key,
             "listing_id": listing_id,
             "pms": pms,
-            "property_context": property_context
+            "property_context": property_context,
+            "selected_property": selected_property
         }
         
         # Run the agent with proper deps parameter

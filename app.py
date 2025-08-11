@@ -97,6 +97,7 @@ class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
     property_context: Optional[dict] = None  # Guest profile, competitive advantage, booking patterns
+    selected_property: Optional[dict] = None  # Selected property info including bedroom count
     # Optional API credentials for testing/direct usage
     api_key: Optional[str] = None
     listing_id: Optional[str] = None
@@ -664,14 +665,170 @@ def fetch_pricing_data(req: FetchRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error occurred while fetching pricing data")
 
+class ListingsRequest(BaseModel):
+    api_key: str  # PriceLabs API key from frontend
+
+class ListingData(BaseModel):
+    id: str
+    pms: str
+    name: str
+    latitude: float
+    longitude: float
+    country: str
+    city_name: str
+    state: str
+    no_of_bedrooms: int
+    min: float
+    base: float
+    max: float
+    group: str
+    subgroup: str
+    tags: str
+    notes: str
+    isHidden: bool
+    push_enabled: bool
+    occupancy_next_7: float
+    market_occupancy_next_7: float
+    occupancy_next_30: float
+    market_occupancy_next_30: float
+    occupancy_next_60: float
+    market_occupancy_next_60: float
+    occupancy_past_90: float
+    market_occupancy_past_90: float
+    revenue_past_7: str
+    stly_revenue_past_7: float
+    recommended_base_price: float
+    last_date_pushed: str
+    last_refreshed_at: str
+
+class ListingsResponse(BaseModel):
+    listings: List[ListingData]
+
+@app.post("/listings", response_model=ListingsResponse)
+def fetch_listings(req: ListingsRequest):
+    """Fetch all property listings for the user"""
+    try:
+        print("🏠 Fetching user property listings...")
+        print(f"🔑 Using API key: {req.api_key[:10]}...")
+        
+        BASE_URL = "https://api.pricelabs.co"
+        HEADERS = {"X-API-Key": req.api_key}
+        
+        # Fetch listings from PriceLabs API
+        listings_url = f"{BASE_URL}/v1/listings"
+        
+        print(f"📡 Calling PriceLabs listings API...")
+        print(f"URL: {listings_url}")
+        print(f"Headers: {HEADERS}")
+        
+        resp = requests.get(listings_url, headers=HEADERS)
+        print(f"Response status: {resp.status_code}")
+        
+        if resp.status_code != 200:
+            print(f"❌ Listings API failed: {resp.status_code} - {resp.text}")
+            
+            # Return proper error messages based on status code
+            if resp.status_code == 401:
+                raise HTTPException(status_code=401, detail="Invalid PriceLabs API key. Please check your API key and try again.")
+            elif resp.status_code == 403:
+                raise HTTPException(status_code=403, detail="PriceLabs API access denied. Please verify your API key permissions.")
+            else:
+                raise HTTPException(status_code=resp.status_code, detail=f"PriceLabs API error: {resp.text}")
+        
+        try:
+            response_data = resp.json()
+            print(f"✅ Parsed JSON response. Type: {type(response_data)}")
+            
+            # PriceLabs listings API returns: {"data": [{"listings": [...]}]}
+            if isinstance(response_data, dict) and "data" in response_data:
+                data = response_data["data"]
+                if isinstance(data, list) and len(data) > 0 and "listings" in data[0]:
+                    listings_data = data[0]["listings"]
+                else:
+                    listings_data = []
+            else:
+                print(f"❌ Unexpected response structure: {response_data}")
+                raise HTTPException(status_code=500, detail="Unexpected response format from PriceLabs API")
+                
+        except Exception as e:
+            print(f"❌ Error parsing JSON response: {e}")
+            print(f"Raw response: {resp.text}")
+            raise HTTPException(status_code=500, detail="Failed to parse PriceLabs API response")
+        
+        # Convert to our ListingData models
+        listings = []
+        for listing in listings_data:
+            try:
+                listing_obj = ListingData(
+                    id=listing.get("id", ""),
+                    pms=listing.get("pms", ""),
+                    name=listing.get("name", ""),
+                    latitude=float(listing.get("latitude", 0)),
+                    longitude=float(listing.get("longitude", 0)),
+                    country=listing.get("country", ""),
+                    city_name=listing.get("city_name", ""),
+                    state=listing.get("state", ""),
+                    no_of_bedrooms=int(listing.get("no_of_bedrooms", 0)),
+                    min=float(listing.get("min", 0)),
+                    base=float(listing.get("base", 0)),
+                    max=float(listing.get("max", 0)),
+                    group=listing.get("group", ""),
+                    subgroup=listing.get("subgroup", ""),
+                    tags=listing.get("tags", ""),
+                    notes=listing.get("notes", ""),
+                    isHidden=bool(listing.get("isHidden", False)),
+                    push_enabled=bool(listing.get("push_enabled", False)),
+                    occupancy_next_7=float(listing.get("occupancy_next_7", 0)),
+                    market_occupancy_next_7=float(listing.get("market_occupancy_next_7", 0)),
+                    occupancy_next_30=float(listing.get("occupancy_next_30", 0)),
+                    market_occupancy_next_30=float(listing.get("market_occupancy_next_30", 0)),
+                    occupancy_next_60=float(listing.get("occupancy_next_60", 0)),
+                    market_occupancy_next_60=float(listing.get("market_occupancy_next_60", 0)),
+                    occupancy_past_90=float(listing.get("occupancy_past_90", 0)),
+                    market_occupancy_past_90=float(listing.get("market_occupancy_past_90", 0)),
+                    revenue_past_7=str(listing.get("revenue_past_7", "")),
+                    stly_revenue_past_7=float(listing.get("stly_revenue_past_7", 0)),
+                    recommended_base_price=float(listing.get("recommended_base_price", 0)),
+                    last_date_pushed=str(listing.get("last_date_pushed", "")),
+                    last_refreshed_at=str(listing.get("last_refreshed_at", ""))
+                )
+                listings.append(listing_obj)
+            except Exception as e:
+                print(f"⚠️ Error parsing listing {listing.get('id', 'unknown')}: {e}")
+                continue
+        
+        print(f"✅ Successfully parsed {len(listings)} property listings")
+        
+        return ListingsResponse(listings=listings)
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions (our proper error responses)
+        raise
+    except Exception as e:
+        print(f"❌ CRITICAL ERROR in fetch_listings: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error occurred while fetching listings")
+
 class AnalyzeRequest(BaseModel):
     nights: List[NightData]
     model: Optional[str] = "gpt-4"
+    selected_property: Optional[dict] = None  # Include selected property info for AI
 
 @app.post("/analyze-pricing", response_model=List[LLMResult])
 def analyze_pricing(req: AnalyzeRequest):
     print("📥 Received analyze request")
     print(f"📊 Request details: {len(req.nights)} nights, model: {req.model}")
+    
+    # Extract property information if provided
+    property_info = ""
+    if req.selected_property:
+        prop = req.selected_property
+        bedrooms = prop.get('no_of_bedrooms', 'Unknown')
+        name = prop.get('name', 'Property')
+        location = prop.get('location', 'Unknown Location')
+        property_info = f"\nSELECTED PROPERTY: {name} in {location} ({bedrooms} bedroom{'s' if bedrooms != 1 else ''})"
+        print(f"🏠 Using property context: {name} - {bedrooms} bedrooms in {location}")
     
     if not settings.OPENAI_API_KEY:
         print("❌ OpenAI API key not configured!")
@@ -717,7 +874,14 @@ def analyze_pricing(req: AnalyzeRequest):
         if night.avg_los_last_year:
             stay_context = f"Typical Stay: {night.avg_los_last_year:.0f} nights"
 
-        prompt = f"""Act as a revenue manager for a luxury STR property in Newport, RI. Analyze this night's data and provide pricing recommendations in valid JSON:
+        # Include property-specific context in prompt
+        property_specific_location = ""
+        if req.selected_property:
+            prop = req.selected_property
+            location = prop.get('location', 'Newport, RI')
+            property_specific_location = f" in {location}"
+
+        prompt = f"""Act as a revenue manager for a luxury STR property{property_specific_location}. Analyze this night's data and provide pricing recommendations in valid JSON:{property_info}
 
 YOUR PROPERTY:
 - Date: {night.date} ({night.day_of_week})
@@ -736,6 +900,7 @@ ENHANCED PRICING STRATEGY:
 - Demand Signals: Use neighborhood demand level (1=low, 5=high) for pricing
 - Price Constraints: Respect minimum price limit
 - Stay Patterns: Consider typical length of stay for rate optimization
+- Property Size: Consider bedroom count for market positioning and pricing strategy
 - Real market data: Price competitively vs actual market (10-20% premium for luxury)
 - Low demand: Aggressively undercut to capture bookings (15-25% reduction)
 - High demand/events: Maintain or raise prices (10-30% premium)
@@ -970,7 +1135,8 @@ async def chat_with_ai(req: ChatRequest):
             api_key=api_key,
             listing_id=listing_id,
             pms=pms,
-            property_context=property_context
+            property_context=property_context,
+            selected_property=req.selected_property
         )
         
         print(f"✅ AI response received (length: {len(ai_response)})")
