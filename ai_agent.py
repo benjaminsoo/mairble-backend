@@ -954,7 +954,7 @@ async def run_agent(message: str, api_key: str, listing_id: str = None, pms: str
         
         # Run the agent with proper deps parameter
         result = await agent.run(message, deps=deps)
-        return result.data
+        return result.output
         
     except Exception as e:
         print(f"❌ Error running agent: {e}")
