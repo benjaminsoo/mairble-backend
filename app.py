@@ -57,6 +57,7 @@ class FetchRequest(BaseModel):
     pms: Optional[str] = None  # PMS from frontend
     date_from: Optional[str] = None  # yyyy-mm-dd
     date_to: Optional[str] = None
+    selected_property: Optional[dict] = None  # Selected property info including bedroom count
 
 class NightData(BaseModel):
     date: str
@@ -526,7 +527,15 @@ def fetch_pricing_data(req: FetchRequest):
                 print(f"📊 Market data found for {date}: ${market_avg_price}")
             
             # Extract occupancy from neighborhood data
-            occupancy = extract_occupancy_for_date(nb_data, date)
+            # Use the selected property's bedroom count for market analysis
+            property_bedrooms = "3"  # Default fallback
+            if req.selected_property and req.selected_property.get('no_of_bedrooms'):
+                property_bedrooms = str(req.selected_property['no_of_bedrooms'])
+                print(f"🛏️ Using {property_bedrooms} bedrooms for occupancy analysis from selected property")
+            else:
+                print(f"🛏️ Using default {property_bedrooms} bedrooms for occupancy analysis (no property info)")
+            
+            occupancy = extract_occupancy_for_date(nb_data, date, property_bedrooms)
             
             # Extract event data
             event = None

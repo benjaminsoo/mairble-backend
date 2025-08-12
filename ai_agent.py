@@ -270,7 +270,9 @@ def get_pricing_suggestion(ctx: RunContext[dict], dates: str) -> str:
         # 3. Process ONLY the specifically requested dates
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
         suggestions = []
-        property_bedrooms = "3"  # Default bedroom category
+        # Use the selected property's bedroom count for market analysis
+        property_bedrooms = str(selected_property.get('no_of_bedrooms', 3))
+        print(f"🛏️ Using {property_bedrooms} bedrooms for market analysis")
         
         # Create a lookup dict for faster access
         pricing_lookup = {night.get("date"): night for night in pricing_data}
