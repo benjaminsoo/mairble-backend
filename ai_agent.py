@@ -17,9 +17,11 @@ agent = Agent(
     system_prompt=f"""You are an AI assistant for short-term rental hosts. Today is {datetime.date.today().isoformat()}.
 
 Help with property availability and pricing questions using available tools:
-- get_unbooked_openings(): Find available date ranges (next 60 days)
-- get_pricing_suggestion(): Get AI pricing analysis for specific dates (use YYYY-MM-DD format)
-- get_revenue_forecast(): Calculate revenue projections for a date range. 
+- get_unbooked_openings(): Find available date ranges (next 60 days) for the selected property
+- get_pricing_suggestion(): Get AI pricing analysis for specific dates (use YYYY-MM-DD format) for the selected property
+- get_revenue_forecast(): Calculate revenue projections for a date range for the selected property
+
+All tools automatically use the currently selected property's data. When property context is provided, tailor responses to that specific property's characteristics (bedroom count, location, guest type, etc.).
 
 Communication Style: Respond in a concise, data-driven manner like an experienced analyst. Lead with key numbers and metrics, use minimal filler words, and compress insights into dense, actionable statements. Keep responses brief and focused on bottom-line impact.
 
@@ -64,7 +66,6 @@ def add_property_context(ctx: RunContext[dict]) -> str:
         prop_bedrooms = selected_property.get('no_of_bedrooms', 'Unknown')
         
         property_section = f"""
-CURRENT PROPERTY: {prop_name}
 LOCATION: {prop_location}
 BEDROOMS: {prop_bedrooms} bedroom{'s' if prop_bedrooms != 1 else ''}
 MARKET POSITIONING: Use bedroom count for appropriate market segment positioning and pricing strategy.
@@ -167,6 +168,14 @@ def get_pricing_suggestion(ctx: RunContext[dict], dates: str) -> str:
     api_key = deps.get('api_key')
     listing_id = deps.get('listing_id')
     pms = deps.get('pms', 'airbnb')
+    selected_property = deps.get('selected_property')
+    
+    # Require selected property for pricing analysis
+    if not selected_property or not selected_property.get('id'):
+        return "❌ No property selected. Please select a property first to get pricing suggestions."
+    
+    listing_id = selected_property['id']
+    print(f"🏠 Using selected property: {listing_id} ({selected_property.get('name', 'Unknown Property')})")
     
     if not api_key or not listing_id:
         return "Missing required API credentials (api_key or listing_id)"
@@ -666,6 +675,14 @@ def get_revenue_forecast(ctx: RunContext[dict], date_from: str, date_to: str) ->
     api_key = deps.get('api_key')
     listing_id = deps.get('listing_id')
     pms = deps.get('pms', 'airbnb')
+    selected_property = deps.get('selected_property')
+    
+    # Require selected property for revenue forecast
+    if not selected_property or not selected_property.get('id'):
+        return "❌ No property selected. Please select a property first to get revenue forecasts."
+    
+    listing_id = selected_property['id']
+    print(f"🏠 Using selected property: {listing_id} ({selected_property.get('name', 'Unknown Property')})")
     
     if not api_key or not listing_id:
         return "Missing required API credentials (api_key or listing_id)"
@@ -798,6 +815,14 @@ def get_unbooked_openings(ctx: RunContext[dict]) -> str:
     api_key = deps.get('api_key')
     listing_id = deps.get('listing_id')
     pms = deps.get('pms', 'airbnb')
+    selected_property = deps.get('selected_property')
+    
+    # Require selected property for availability check
+    if not selected_property or not selected_property.get('id'):
+        raise Exception("❌ No property selected. Please select a property first to check availability.")
+    
+    listing_id = selected_property['id']
+    print(f"🏠 Using selected property: {listing_id} ({selected_property.get('name', 'Unknown Property')})")
     
     if not api_key or not listing_id:
         raise Exception("Missing required API credentials (api_key or listing_id)")
@@ -914,7 +939,7 @@ def get_unbooked_openings(ctx: RunContext[dict]) -> str:
         print(f"❌ {error_msg}")
         return error_msg
 
-async def run_agent(message: str, api_key: str, listing_id: str, pms: str = "airbnb", property_context: dict = None, selected_property: dict = None) -> str:
+async def run_agent(message: str, api_key: str, listing_id: str = None, pms: str = "airbnb", property_context: dict = None, selected_property: dict = None) -> str:
     """Run the Pydantic AI agent with user message, API credentials, and optional property context."""
     try:
         # Create dependencies dictionary with API credentials and property context

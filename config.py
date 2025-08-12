@@ -13,7 +13,6 @@ class Settings:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "your_openai_api_key_here")
     
     # Property Configuration
-    LISTING_ID: str = os.getenv("LISTING_ID", "21f49919-2f73-4b9e-88c1-f460a316a5bc")
     PMS: str = os.getenv("PMS", "yourporter")
     
     # Server Configuration

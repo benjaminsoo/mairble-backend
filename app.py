@@ -47,7 +47,6 @@ def health_check():
         "config": {
             "has_pricelabs_key": bool(settings.PRICELABS_API_KEY),
             "has_openai_key": bool(settings.OPENAI_API_KEY),
-            "listing_id": settings.LISTING_ID,
             "pms": settings.PMS
         }
     }
@@ -379,9 +378,12 @@ def fetch_pricing_data(req: FetchRequest):
         date_from = req.date_from or today.isoformat()
         date_to = req.date_to or (today + datetime.timedelta(days=90)).isoformat()
         
-        # Use provided values or fallback to defaults
-        listing_id = req.listing_id or settings.LISTING_ID
+        # Use provided values or require listing_id from frontend
+        listing_id = req.listing_id
         pms = req.pms or settings.PMS
+        
+        if not listing_id:
+            raise HTTPException(status_code=400, detail="listing_id is required. Please select a property.")
 
         print(f"🔍 Fetching pricing data for listing {listing_id} from {date_from} to {date_to}")
         print(f"🔑 Using API key: {req.api_key[:10]}...")
@@ -1171,7 +1173,7 @@ async def chat_with_ai(req: ChatRequest):
         
         # Use API credentials from request if provided, otherwise fall back to settings
         api_key = req.api_key or settings.PRICELABS_API_KEY
-        listing_id = req.listing_id or settings.LISTING_ID
+        listing_id = req.listing_id  # No fallback needed since AI tools use selected_property
         pms = req.pms or settings.PMS
         
         # Update property context if provided
