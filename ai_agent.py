@@ -66,6 +66,7 @@ def add_property_context(ctx: RunContext[dict]) -> str:
         prop_bedrooms = selected_property.get('no_of_bedrooms', 'Unknown')
         
         property_section = f"""
+CURRENT PROPERTY: {prop_name}
 LOCATION: {prop_location}
 BEDROOMS: {prop_bedrooms} bedroom{'s' if prop_bedrooms != 1 else ''}
 MARKET POSITIONING: Use bedroom count for appropriate market segment positioning and pricing strategy.
