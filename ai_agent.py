@@ -14,7 +14,7 @@ settings = get_settings()
 agent = Agent(
     'openai:gpt-4',
     deps_type=dict,
-    system_prompt=f"""You are an AI assistant for short-term rental hosts. Today is {datetime.date.today().isoformat()}.
+    system_prompt="""You are an AI assistant for short-term rental hosts.
 
 Help with property availability and pricing questions using available tools:
 - get_unbooked_openings(): Find available date ranges (next 60 days) for the selected property
@@ -49,14 +49,14 @@ Example formatting:
 
 @agent.system_prompt
 def add_property_context(ctx: RunContext[dict]) -> str:
-    """Add property context to system prompt if available"""
+    """Add property context and current date to system prompt"""
+    # Always add current date
+    today_str = datetime.date.today().isoformat()
+    
     property_context = ctx.deps.get('property_context')
     selected_property = ctx.deps.get('selected_property')
     
-    # If no context available, return empty
-    if not property_context and not selected_property:
-        return ""
-    
+    # Start with date injection
     sections = []
     
     # Add selected property information
@@ -148,9 +148,10 @@ PROPERTY CONTEXT: {' | '.join(sections)}
 CRITICAL: Reference this context in all advice. Align recommendations with guest type, advantages, and pricing strategy."""
             
             print(f"✅ Property context added: {' | '.join(sections)}")
-            return context_prompt
+            return f"Today is {today_str}." + context_prompt
     
-    return ""
+    # If no property context, just return the date
+    return f"Today is {today_str}."
 
 @agent.tool
 def get_pricing_suggestion(ctx: RunContext[dict], dates: str) -> str:
