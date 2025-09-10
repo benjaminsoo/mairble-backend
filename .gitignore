@@ -78,4 +78,9 @@ coverage.xml
 
 # Local development files
 local_settings.py
-development.py 
+development.py
+
+# Development and testing scripts
+start_server.sh
+start_simple.sh
+test_chat.py 
